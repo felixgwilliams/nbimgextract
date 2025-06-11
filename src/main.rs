@@ -49,18 +49,14 @@ fn main() -> anyhow::Result<()> {
         .enumerate()
         .filter_map(|(j, cc)| cc.get_code_cell().map(|c| (j, c)))
     {
-        dbg!(i);
         let image_name = get_image_candidate(&cell.metadata.tags, &tag_prefix)
             .unwrap_or_else(|| format!("img-{:0width$}", i + 1, width = n_digits as usize));
-        dbg!(&image_name);
 
-        dbg!(cell.get_output_data());
         let cell_images: Vec<_> = cell
             .get_output_data()
             .iter()
             .flat_map(|mb| get_image_data(mb))
             .collect();
-        dbg!(cell_images.len());
         let n_cell_images = cell_images.len();
         to_write.extend(cell_images.iter().enumerate().map(
             |(j, (image_type, image_json_data))| ToWrite {
@@ -89,7 +85,6 @@ fn main() -> anyhow::Result<()> {
         let file_name = output_path
             .join(item.name)
             .with_extension(item.image_type.get_extension());
-        dbg!(&file_name);
         match item.image_json_data {
             SourceValue::String(b64_data) => {
                 let image_bytes = BASE64_STANDARD.decode(b64_data)?;

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["maturin>=1.8,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "nbextract"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dynamic = ["version"]
+[tool.maturin]
+bindings = "bin"
+
+[dependency-groups]
+# required to run the example notebook for cell output
+test = [
+    "ipykernel>=6.29.5",
+    "ipython>=8.12.3",
+]

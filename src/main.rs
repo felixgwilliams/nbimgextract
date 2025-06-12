@@ -99,6 +99,8 @@ fn main() -> anyhow::Result<()> {
                 buf.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")?;
                 buf.write_all(svg_data.as_bytes())?;
             }
+            // just ignore the json type data
+            SourceValue::JsonData(_) => {}
         }
     }
 
@@ -156,7 +158,10 @@ fn get_image_data(data: &MimeBundle) -> Vec<(ImageType, &SourceValue)> {
     let mut out = Vec::new();
     for (mime, val) in data {
         if let Some(image_type) = get_image_type(mime) {
-            out.push((image_type, val));
+            // don't push the json data here so we don't have to process it later
+            if !matches!(val, SourceValue::JsonData(_)) {
+                out.push((image_type, val));
+            }
         }
     }
     out

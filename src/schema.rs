@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use serde::Deserialize;
+use serde_json::Value;
 
 // The other members of the notebook are not needed, so we pretend they don't exist.
 // If we wanted to write notebooks with this code, we would have to add them back.
@@ -110,8 +111,12 @@ impl Output {
 #[serde(untagged)]
 pub enum SourceValue {
     String(String),
-
     StringArray(Vec<String>),
+    // If the media type string ends with json, the contents can be anything. e.g. with widgets
+    // this variant has to go last, because with untagged unions, the variants are tried in order.
+    // We won't enforce that the media type string ends with json
+    #[allow(dead_code)]
+    JsonData(Value),
 }
 pub type MimeBundle = HashMap<String, SourceValue>;
 

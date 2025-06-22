@@ -40,8 +40,6 @@ jobs:
             target: ppc64le
     steps:
       - uses: actions/checkout@v4
-      - name: install libssl
-        run: sudo apt-get install pkg-config libssl-dev libopenblas-dev
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -90,8 +88,6 @@ jobs:
             target: armv7
     steps:
       - uses: actions/checkout@v4
-      - name: install libssl
-        run: sudo apt-get install pkg-config libssl-dev libopenblas-dev
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:

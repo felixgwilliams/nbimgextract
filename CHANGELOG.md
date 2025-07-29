@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning].
 
 - /
 
+## [0.2.0] - 2025-07-29
+
+- BREAKING: Raise an error if the target image directory is non empty
+- Change the default output directory to be in the same folder as the notebook, not the CWD
+- Print list of written files by default
+- Add options for how to handle non-empty target directories. default: error, previous behaviour: proceed. New option: clear directory before write
+- Use comments in cells with `label:` to get image file names
+
 ## [0.1.2] - 2025-06-12
 
 - Allow parsing notebooks with with json data in outputs such as widgets

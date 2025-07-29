@@ -1,7 +1,11 @@
 [package]
 name = "nbimgextract"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
+homepage = "https://github.com/felixgwilliams/nbimgextract"
+repository = "https://github.com/felixgwilliams/nbimgextract"
+license = "MIT"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -6,7 +6,6 @@ use clap::Parser;
 use std::{
     fs::{create_dir_all, File},
     io::{BufReader, BufWriter, Write},
-    path::PathBuf,
 };
 
 use crate::schema::{MimeBundle, RawNotebook, SourceValue};
@@ -36,7 +35,10 @@ fn main() -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow!("Input filename is empty"))?
                 .to_str()
                 .ok_or_else(|| anyhow!("Bad file name"))?; // can't see how to manipulate OsStr themselves
-            PathBuf::from(file_stem.to_owned() + "_images")
+            let Some(parent) = cli.file.parent() else {
+                bail!("Invalid output path");
+            };
+            parent.join(file_stem.to_owned() + "_images")
         }
     };
     let n_cells = nb.cells.len();

@@ -87,6 +87,9 @@ fn main() -> anyhow::Result<()> {
         let file_name = output_path
             .join(item.name)
             .with_extension(item.image_type.get_extension());
+        if !cli.quiet {
+            println!("Writing to {}", file_name.display());
+        }
         match item.image_json_data {
             SourceValue::String(b64_data) => {
                 let image_bytes = BASE64_STANDARD.decode(b64_data)?;

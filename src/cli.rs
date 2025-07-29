@@ -22,4 +22,7 @@ pub struct Cli {
     /// Prefix for cell tags to create the file name
     #[arg(long, short)]
     pub tag_prefix: Option<String>,
+    /// Disable output of written files
+    #[arg(long, short)]
+    pub quiet: bool,
 }

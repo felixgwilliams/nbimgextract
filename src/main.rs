@@ -2,7 +2,7 @@ mod cli;
 mod schema;
 use crate::{
     cli::NonEmptyDirAction,
-    schema::{MimeBundle, RawNotebook, SourceValue},
+    schema::{CodeCell, MimeBundle, RawNotebook, SourceValue},
 };
 use anyhow::{anyhow, bail};
 use base64::prelude::*;
@@ -55,7 +55,7 @@ fn main() -> anyhow::Result<()> {
         .enumerate()
         .filter_map(|(j, cc)| cc.get_code_cell().map(|c| (j, c)))
     {
-        let image_name = get_image_candidate(&cell.metadata.tags, &tag_prefix)
+        let image_name = get_image_candidate(cell, &tag_prefix)
             .unwrap_or_else(|| format!("img-{:0width$}", i + 1, width = n_digits as usize));
 
         let cell_images: Vec<_> = cell
@@ -125,8 +125,39 @@ fn make_write_message(cli: &cli::Cli, file_name: &Path) {
         println!("Writing to {}", file_name.display());
     }
 }
+static LABEL: &str = "label:";
 
-fn get_image_candidate<S: AsRef<str>>(tags: &Option<Vec<S>>, tag_prefix: &str) -> Option<String> {
+pub fn get_comment_label(source: &str) -> Vec<&str> {
+    let mut comments = Vec::new();
+    for line in source.lines() {
+        let trim_line = line.trim();
+        if !trim_line.starts_with('#') {
+            continue;
+        }
+        if let Some((_, identifier)) = trim_line.split_once(LABEL) {
+            comments.push(identifier.trim())
+        }
+    }
+
+    comments
+}
+
+fn get_image_candidate(cell: &CodeCell, tag_prefix: &str) -> Option<String> {
+    get_image_candidate_comment(cell)
+        .or_else(|| get_image_candidate_tags(&cell.metadata.tags, tag_prefix))
+}
+fn get_image_candidate_comment(cell: &CodeCell) -> Option<String> {
+    if let Some(sa) = cell.source.to_string_array() {
+        let label = sa.iter().flat_map(|&s| get_comment_label(s)).next();
+        label.map(|s| s.to_string())
+    } else {
+        None
+    }
+}
+fn get_image_candidate_tags<S: AsRef<str>>(
+    tags: &Option<Vec<S>>,
+    tag_prefix: &str,
+) -> Option<String> {
     if let Some(tags) = tags {
         let candidates: Vec<_> = tags
             .iter()

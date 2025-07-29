@@ -56,6 +56,7 @@ pub struct CodeCell {
     pub metadata: CellMetadata,
     /// Execution, display, or stream outputs.
     pub outputs: Vec<Output>,
+    pub source: SourceValue,
 }
 impl CodeCell {
     pub fn get_output_data(&self) -> Vec<&MimeBundle> {
@@ -119,6 +120,16 @@ pub enum SourceValue {
     JsonData(Value),
 }
 pub type MimeBundle = HashMap<String, SourceValue>;
+
+impl SourceValue {
+    pub fn to_string_array(&self) -> Option<Vec<&str>> {
+        match self {
+            Self::JsonData(_) => None,
+            Self::StringArray(sa) => Some(sa.iter().map(|s| s.as_str()).collect()),
+            Self::String(s) => Some(s.split_inclusive('\n').collect()),
+        }
+    }
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct DisplayDataOut {

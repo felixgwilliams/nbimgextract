@@ -1,14 +1,18 @@
 mod cli;
 mod schema;
+use crate::{
+    cli::NonEmptyDirAction,
+    schema::{MimeBundle, RawNotebook, SourceValue},
+};
 use anyhow::{anyhow, bail};
 use base64::prelude::*;
 use clap::Parser;
+use colored::Colorize;
 use std::{
-    fs::{create_dir_all, File},
+    fs::{create_dir_all, remove_dir_all, File},
     io::{BufReader, BufWriter, Write},
+    path::Path,
 };
-
-use crate::schema::{MimeBundle, RawNotebook, SourceValue};
 static TO_TRIM: &[char] = &['-', ' ', '_'];
 #[derive(Debug, Clone)]
 struct ToWrite<'a> {
@@ -27,7 +31,7 @@ fn main() -> anyhow::Result<()> {
         .trim_end_matches(TO_TRIM)
         .to_owned();
     let output_path = match cli.output_path {
-        Some(output_path) => output_path,
+        Some(ref output_path) => output_path.clone(),
         None => {
             let file_stem = cli
                 .file
@@ -36,7 +40,7 @@ fn main() -> anyhow::Result<()> {
                 .to_str()
                 .ok_or_else(|| anyhow!("Bad file name"))?; // can't see how to manipulate OsStr themselves
             let Some(parent) = cli.file.parent() else {
-                bail!("Invalid output path");
+                bail!("Invalid output path".red());
             };
             parent.join(file_stem.to_owned() + "_images")
         }
@@ -81,14 +85,17 @@ fn main() -> anyhow::Result<()> {
         ));
     }
     if !to_write.is_empty() {
-        create_dir_all(&output_path)?;
+        checked_create_dir(&output_path, cli.non_empty_action.get_action(), cli.dry_run)?;
     }
     for item in to_write {
         let file_name = output_path
             .join(item.name)
             .with_extension(item.image_type.get_extension());
         if !cli.quiet {
-            println!("Writing to {}", file_name.display());
+            make_write_message(&cli, &file_name);
+        }
+        if cli.dry_run {
+            continue;
         }
         match item.image_json_data {
             SourceValue::String(b64_data) => {
@@ -97,7 +104,7 @@ fn main() -> anyhow::Result<()> {
             }
             SourceValue::StringArray(arr) => {
                 if item.image_type != ImageType::Svg {
-                    bail!("Expected binary data.")
+                    bail!("Expected binary data.".red())
                 }
                 let svg_data = String::from_iter(arr.iter().map(|e| e.as_str()));
                 let mut buf = BufWriter::new(File::create(file_name)?);
@@ -110,6 +117,13 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+fn make_write_message(cli: &cli::Cli, file_name: &Path) {
+    if cli.dry_run {
+        println!("Would write to {}", file_name.display());
+    } else {
+        println!("Writing to {}", file_name.display());
+    }
 }
 
 fn get_image_candidate<S: AsRef<str>>(tags: &Option<Vec<S>>, tag_prefix: &str) -> Option<String> {
@@ -170,4 +184,35 @@ fn get_image_data(data: &MimeBundle) -> Vec<(ImageType, &SourceValue)> {
         }
     }
     out
+}
+fn checked_create_dir<P: AsRef<Path>>(
+    path: P,
+    exist_action: NonEmptyDirAction,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    use NonEmptyDirAction::*;
+    let path = path.as_ref();
+    if !path.exists() || exist_action == Proceed {
+        if !dry_run {
+            create_dir_all(path)?;
+        }
+
+        return Ok(());
+    }
+    if path.read_dir()?.next().is_none() {
+        Ok(())
+    } else if exist_action == Error {
+        bail!("Target folder is not empty!".red());
+    } else {
+        if dry_run {
+            eprintln!("Would delete files in directory");
+        } else {
+            eprintln!("Deleting files in directory");
+        }
+        if !dry_run {
+            remove_dir_all(path)?;
+            create_dir_all(path)?;
+        }
+        Ok(())
+    }
 }

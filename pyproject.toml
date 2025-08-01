@@ -13,16 +13,18 @@ classifiers = [
 dynamic = ["version", "urls"]
 
 
-
 [tool.maturin]
 bindings = "bin"
 
 [dependency-groups]
 # required to run the example notebook for cell output
 test = [
+    "hvplot>=0.10.0",
     "ipykernel>=6.29.5",
     "ipython>=8.12.3",
     "ipywidgets>=8.1.7",
     "matplotlib>=3.7.5",
     "numpy>=1.24.4",
+    "polars>=1.8.2",
+    "pyarrow>=17.0.0",
 ]

@@ -1,6 +1,6 @@
 [package]
 name = "nbimgextract"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 homepage = "https://github.com/felixgwilliams/nbimgextract"
 repository = "https://github.com/felixgwilliams/nbimgextract"
@@ -17,3 +17,4 @@ colored = "3.0.0"
 indexmap = { version = "2.9.0", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.140", features = ["preserve_order", "raw_value"] }
+tl = "0.7.8"

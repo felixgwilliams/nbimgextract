@@ -17,3 +17,4 @@ colored = "3.0.0"
 indexmap = { version = "2.9.0", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.140", features = ["preserve_order", "raw_value"] }
+tl = "0.7.8"

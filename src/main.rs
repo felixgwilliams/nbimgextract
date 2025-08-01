@@ -8,6 +8,7 @@ use anyhow::{anyhow, bail};
 use base64::prelude::*;
 use clap::Parser;
 use colored::Colorize;
+use serde_json::Value;
 use std::{
     fs::{create_dir_all, remove_dir_all, File},
     io::{BufReader, BufWriter, Write},
@@ -17,7 +18,9 @@ static TO_TRIM: &[char] = &['-', ' ', '_'];
 #[derive(Debug, Clone)]
 struct ToWrite<'a> {
     image_type: ImageType,
-    image_json_data: &'a SourceValue,
+    // image_json_data: Cow<'a, SourceValueRef>,
+    // image_json_data: &'a SourceValue,
+    image_json_data: SourceValueWrap<'a>,
     name: String,
 }
 fn main() -> anyhow::Result<()> {
@@ -49,6 +52,7 @@ fn main() -> anyhow::Result<()> {
     // https://stackoverflow.com/a/69298721
     let n_digits = n_cells.checked_ilog10().unwrap_or(0) + 1;
     let mut to_write = Vec::new();
+    // let mut cell_images: Vec::new();
     for (i, cell) in nb
         .cells
         .iter()
@@ -64,9 +68,9 @@ fn main() -> anyhow::Result<()> {
             .flat_map(|mb| get_image_data(mb))
             .collect();
         let n_cell_images = cell_images.len();
-        to_write.extend(cell_images.iter().enumerate().map(
+        to_write.extend(cell_images.into_iter().enumerate().map(
             |(j, (image_type, image_json_data))| ToWrite {
-                image_type: *image_type,
+                image_type,
                 image_json_data,
                 name: {
                     if n_cell_images > 1 {
@@ -97,12 +101,12 @@ fn main() -> anyhow::Result<()> {
         if cli.dry_run {
             continue;
         }
-        match item.image_json_data {
-            SourceValue::String(b64_data) => {
+        match item.image_json_data.to_ref() {
+            SourceValueRef::String(b64_data) => {
                 let image_bytes = BASE64_STANDARD.decode(b64_data)?;
                 BufWriter::new(File::create(file_name)?).write_all(&image_bytes)?;
             }
-            SourceValue::StringArray(arr) => {
+            SourceValueRef::StringArray(arr) => {
                 if item.image_type != ImageType::Svg {
                     bail!("Expected binary data.".red())
                 }
@@ -112,7 +116,7 @@ fn main() -> anyhow::Result<()> {
                 buf.write_all(svg_data.as_bytes())?;
             }
             // just ignore the json type data
-            SourceValue::JsonData(_) => {}
+            SourceValueRef::JsonData(_) => {}
         }
     }
 
@@ -204,14 +208,97 @@ fn get_image_type(mime: &str) -> Option<ImageType> {
     }
 }
 
-fn get_image_data(data: &MimeBundle) -> Vec<(ImageType, &SourceValue)> {
+fn parse_data_url(data_url: &str) -> Option<(ImageType, &str)> {
+    let strip = data_url.strip_prefix("data:")?;
+    let (mime_str_base64, body_str) = strip.split_once(',')?;
+    let mime_str = mime_str_base64.strip_suffix(";base64")?;
+    let image_type = get_image_type(mime_str)?;
+    Some((image_type, body_str))
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SourceValueRef<'a> {
+    String(&'a str),
+    StringArray(&'a [String]),
+    #[allow(dead_code)]
+    JsonData(&'a Value),
+}
+
+// This is a way to make an object which references the content of a SourceValue. A reference to
+// a thing which is either a string or array is converted to a thing which is either a reference to
+// a string or a reference to an array. This is kind of like as_deref for Options in a way
+impl SourceValue {
+    fn to_ref<'a>(&'a self) -> SourceValueRef<'a> {
+        match self {
+            Self::JsonData(jd) => SourceValueRef::JsonData(jd),
+            Self::String(s) => SourceValueRef::String(s),
+            Self::StringArray(sa) => SourceValueRef::StringArray(sa),
+        }
+    }
+}
+
+// when extracting an image from a cell, the image data can either be contained in a String,
+// a StringArray or embedded in some HTML.  If it is in a String or StringArray, then we can return
+// a reference, which has the lifetime of the original cell data ('a). If it's in HTML, I rely on
+// the tl parser, which can return a string slice, but the slice has the lifetime of the parser and
+// not the original string of HTML. Therefore, I have no choice but to clone the string. This is why
+// it can either be owned or borrowed. I don't want to clone by default because mostly we don't need
+// to, so I have to do this.
+#[derive(Debug, Clone)]
+enum SourceValueWrap<'a> {
+    Owned(SourceValue),
+    Borrowed(SourceValueRef<'a>),
+}
+// I can't use a cow because I can't borrow SourceValue to SourceRef because the signature does not
+// allow the lifetimes I need
+impl<'a> SourceValueWrap<'a> {
+    fn to_ref(&'a self) -> SourceValueRef<'a> {
+        match self {
+            Self::Borrowed(svr) => *svr,
+            Self::Owned(sv) => sv.to_ref(),
+        }
+    }
+}
+fn get_image_data<'a>(data: &'a MimeBundle) -> Vec<(ImageType, SourceValueWrap<'a>)> {
     let mut out = Vec::new();
     for (mime, val) in data {
-        if let Some(image_type) = get_image_type(mime) {
-            // don't push the json data here so we don't have to process it later
-            if !matches!(val, SourceValue::JsonData(_)) {
-                out.push((image_type, val));
+        if mime == "text/html" {
+            let sa = val
+                .to_string_array()
+                .ok_or_else(|| anyhow::format_err!("Should be a string array"))
+                .unwrap();
+            for line in sa {
+                let Ok(frag2) = tl::parse(line, tl::ParserOptions::default()) else {
+                    continue;
+                };
+                let parser = frag2.parser();
+                let Some(img) = frag2.query_selector("img[src]") else {
+                    continue;
+                };
+                let img_iter = img
+                    .flat_map(|x| x.get(parser).and_then(|x| x.as_tag()))
+                    .flat_map(|x| x.attributes().get("src"))
+                    .flatten()
+                    .flat_map(|x| x.try_as_utf8_str())
+                    .flat_map(parse_data_url)
+                    .map(|(img_type, s)| {
+                        (
+                            img_type,
+                            SourceValueWrap::Owned(SourceValue::String(s.to_string())),
+                        )
+                    });
+                out.extend(img_iter);
             }
+            // let cell_doc = Html::parse_document(val)
+        } else if let Some(image_type) = get_image_type(mime) {
+            // don't push the json data here so we don't have to process it later
+            match val {
+                SourceValue::String(_) | SourceValue::StringArray(_) => {
+                    out.push((image_type, SourceValueWrap::Borrowed(val.to_ref())))
+                }
+
+                _ => {}
+            };
         }
     }
     out

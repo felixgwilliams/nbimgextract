@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning].
 
 - /
 
+## [0.2.1] - 2025-08-01
+
+- Allow exporting images embedded as HTML such as with hvplot
+- Rename output images where labels are duplicated
+
 ## [0.2.0] - 2025-07-29
 
 - BREAKING: Raise an error if the target image directory is non empty

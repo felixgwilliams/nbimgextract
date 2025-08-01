@@ -10,6 +10,7 @@ use clap::Parser;
 use colored::Colorize;
 use serde_json::Value;
 use std::{
+    collections::HashMap,
     fs::{create_dir_all, remove_dir_all, File},
     io::{BufReader, BufWriter, Write},
     path::Path,
@@ -18,8 +19,6 @@ static TO_TRIM: &[char] = &['-', ' ', '_'];
 #[derive(Debug, Clone)]
 struct ToWrite<'a> {
     image_type: ImageType,
-    // image_json_data: Cow<'a, SourceValueRef>,
-    // image_json_data: &'a SourceValue,
     image_json_data: SourceValueWrap<'a>,
     name: String,
 }
@@ -52,6 +51,8 @@ fn main() -> anyhow::Result<()> {
     // https://stackoverflow.com/a/69298721
     let n_digits = n_cells.checked_ilog10().unwrap_or(0) + 1;
     let mut to_write = Vec::new();
+    let mut used_names: HashMap<String, usize> = HashMap::new();
+
     // let mut cell_images: Vec::new();
     for (i, cell) in nb
         .cells
@@ -69,10 +70,8 @@ fn main() -> anyhow::Result<()> {
             .collect();
         let n_cell_images = cell_images.len();
         to_write.extend(cell_images.into_iter().enumerate().map(
-            |(j, (image_type, image_json_data))| ToWrite {
-                image_type,
-                image_json_data,
-                name: {
+            |(j, (image_type, image_json_data))| {
+                let name_stem = {
                     if n_cell_images > 1 {
                         let n_img_digits = n_cell_images.checked_ilog10().unwrap_or(0) + 1;
                         format!(
@@ -84,7 +83,28 @@ fn main() -> anyhow::Result<()> {
                     } else {
                         image_name.clone()
                     }
-                },
+                };
+                let name_count = used_names
+                    .entry(name_stem.clone())
+                    .and_modify(|e| *e += 1)
+                    .or_insert(1);
+                let name = if *name_count <= 1 {
+                    name_stem
+                } else {
+                    let n_dups_digits = name_count.checked_ilog10().unwrap_or(0) + 1;
+                    format!(
+                        "{}-{:0width$}",
+                        name_stem,
+                        *name_count,
+                        width = n_dups_digits as usize
+                    )
+                };
+
+                ToWrite {
+                    image_type,
+                    image_json_data,
+                    name,
+                }
             },
         ));
     }

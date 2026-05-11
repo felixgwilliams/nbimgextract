@@ -1,30 +1,32 @@
-[build-system]
-requires = ["maturin>=1.8,<2.0"]
-build-backend = "maturin"
-
 [project]
 name = "nbimgextract"
 requires-python = ">=3.8"
 classifiers = [
-    "Programming Language :: Rust",
-    "Programming Language :: Python :: Implementation :: CPython",
-    "Programming Language :: Python :: Implementation :: PyPy",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Python :: Implementation :: PyPy",
+  "Programming Language :: Rust",
 ]
-dynamic = ["version", "urls"]
-
-
-[tool.maturin]
-bindings = "bin"
+dynamic = ["urls", "version"]
 
 [dependency-groups]
 # required to run the example notebook for cell output
 test = [
-    "hvplot>=0.10.0",
-    "ipykernel>=6.29.5",
-    "ipython>=8.12.3",
-    "ipywidgets>=8.1.7",
-    "matplotlib>=3.7.5",
-    "numpy>=1.24.4",
-    "polars>=1.8.2",
-    "pyarrow>=17.0.0",
+  "hvplot>=0.10.0",
+  "ipykernel>=6.29.5",
+  "ipython>=8.12.3",
+  "ipywidgets>=8.1.7",
+  "matplotlib>=3.7.5",
+  "numpy>=1.24.4",
+  "polars>=1.8.2",
+  "pyarrow>=17.0.0",
 ]
+
+[build-system]
+requires = ["maturin>=1.8,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+bindings = "bin"
+
+[tool.rumdl]
+disable = ["MD013"]

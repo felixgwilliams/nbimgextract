@@ -1,5 +1,7 @@
 [project]
 name = "nbimgextract"
+description = "A command-line tool for extracting images from Jupyter Notebooks."
+readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
   "Programming Language :: Python :: Implementation :: CPython",

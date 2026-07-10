@@ -8,12 +8,11 @@ use anyhow::{anyhow, bail};
 use base64::prelude::*;
 use clap::Parser;
 use colored::Colorize;
-use serde_json::Value;
 use std::{
     collections::HashMap,
     fs::{create_dir_all, remove_dir_all, File},
     io::{BufReader, BufWriter, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 static TO_TRIM: &[char] = &['-', ' ', '_'];
 #[derive(Debug, Clone)]
@@ -34,18 +33,7 @@ fn main() -> anyhow::Result<()> {
         .to_owned();
     let output_path = match cli.output_path {
         Some(ref output_path) => output_path.clone(),
-        None => {
-            let file_stem = cli
-                .file
-                .file_stem()
-                .ok_or_else(|| anyhow!("Input filename is empty"))?
-                .to_str()
-                .ok_or_else(|| anyhow!("Bad file name"))?; // can't see how to manipulate OsStr themselves
-            let Some(parent) = cli.file.parent() else {
-                bail!("Invalid output path".red());
-            };
-            parent.join(file_stem.to_owned() + "_images")
-        }
+        None => default_output_path(&cli.file)?,
     };
     let n_cells = nb.cells.len();
     // https://stackoverflow.com/a/69298721
@@ -104,13 +92,24 @@ fn main() -> anyhow::Result<()> {
                 buf.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")?;
                 buf.write_all(svg_data.as_bytes())?;
             }
-            // just ignore the json type data
-            SourceValueRef::JsonData(_) => {}
         }
     }
 
     Ok(())
 }
+/// Default output directory: `<file_stem>_images` next to the input file.
+fn default_output_path(file: &Path) -> anyhow::Result<PathBuf> {
+    let file_stem = file
+        .file_stem()
+        .ok_or_else(|| anyhow!("Input filename is empty"))?
+        .to_str()
+        .ok_or_else(|| anyhow!("Bad file name"))?; // can't see how to manipulate OsStr themselves
+
+    // a path with a file stem always has a parent (possibly "")
+    let parent = file.parent().unwrap_or(Path::new(""));
+    Ok(parent.join(file_stem.to_owned() + "_images"))
+}
+
 /// Determine the final file stem for an image, numbering images within a
 /// multi-image cell and de-duplicating names already used by earlier cells.
 fn assign_image_name(
@@ -185,14 +184,11 @@ fn get_image_candidate_comment(cell: &CodeCell) -> Option<String> {
         None
     }
 }
-fn get_image_candidate_tags<S: AsRef<str>>(
-    tags: &Option<Vec<S>>,
-    tag_prefix: &str,
-) -> Option<String> {
+fn get_image_candidate_tags(tags: &Option<Vec<String>>, tag_prefix: &str) -> Option<String> {
     if let Some(tags) = tags {
         let candidates: Vec<_> = tags
             .iter()
-            .filter_map(|t| t.as_ref().strip_prefix(tag_prefix))
+            .filter_map(|t| t.strip_prefix(tag_prefix))
             .map(|s| s.trim_start_matches(TO_TRIM))
             .collect();
         if candidates.len() > 1 {
@@ -247,21 +243,6 @@ fn parse_data_url(data_url: &str) -> Option<(ImageType, &str)> {
 enum SourceValueRef<'a> {
     String(&'a str),
     StringArray(&'a [String]),
-    #[allow(dead_code)]
-    JsonData(&'a Value),
-}
-
-// This is a way to make an object which references the content of a SourceValue. A reference to
-// a thing which is either a string or array is converted to a thing which is either a reference to
-// a string or a reference to an array. This is kind of like as_deref for Options in a way
-impl SourceValue {
-    fn to_ref<'a>(&'a self) -> SourceValueRef<'a> {
-        match self {
-            Self::JsonData(jd) => SourceValueRef::JsonData(jd),
-            Self::String(s) => SourceValueRef::String(s),
-            Self::StringArray(sa) => SourceValueRef::StringArray(sa),
-        }
-    }
 }
 
 // when extracting an image from a cell, the image data can either be contained in a String,
@@ -270,10 +251,11 @@ impl SourceValue {
 // the tl parser, which can return a string slice, but the slice has the lifetime of the parser and
 // not the original string of HTML. Therefore, I have no choice but to clone the string. This is why
 // it can either be owned or borrowed. I don't want to clone by default because mostly we don't need
-// to, so I have to do this.
+// to, so I have to do this. Only base64 strings are ever extracted from HTML, so the owned variant
+// holds a plain String.
 #[derive(Debug, Clone)]
 enum SourceValueWrap<'a> {
-    Owned(SourceValue),
+    Owned(String),
     Borrowed(SourceValueRef<'a>),
 }
 // I can't use a cow because I can't borrow SourceValue to SourceRef because the signature does not
@@ -282,7 +264,7 @@ impl<'a> SourceValueWrap<'a> {
     fn to_ref(&'a self) -> SourceValueRef<'a> {
         match self {
             Self::Borrowed(svr) => *svr,
-            Self::Owned(sv) => sv.to_ref(),
+            Self::Owned(s) => SourceValueRef::String(s),
         }
     }
 }
@@ -290,53 +272,54 @@ fn get_image_data<'a>(data: &'a MimeBundle) -> Vec<(ImageType, SourceValueWrap<'
     let mut out = Vec::new();
     for (mime, val) in data {
         if mime == "text/html" {
-            let sa = val
-                .to_string_array()
-                .ok_or_else(|| anyhow::format_err!("Should be a string array"))
-                .unwrap();
+            // per nbformat, non-JSON mimes must be strings or string arrays: see "mimebundle" in
+            // <https://github.com/jupyter/nbformat/blob/16b53251aabf472ad9406ddb1f78b0421c014eeb/nbformat/v4/nbformat.v4.schema.json>
+            let Some(sa) = val.to_string_array() else {
+                eprintln!("Warning: skipping {mime} output with unexpected JSON data");
+                continue;
+            };
             for line in sa {
-                let Ok(frag2) = tl::parse(line, tl::ParserOptions::default()) else {
-                    continue;
-                };
+                let frag2 = tl::parse(line, tl::ParserOptions::default())
+                    .expect("tl only fails to parse HTML larger than u32::MAX");
                 let parser = frag2.parser();
-                let Some(img) = frag2.query_selector("img[src]") else {
-                    continue;
-                };
+                let img = frag2
+                    .query_selector("img[src]")
+                    .expect("query_selector only fails for invalid selectors; this one is static");
                 let img_iter = img
                     .flat_map(|x| x.get(parser).and_then(|x| x.as_tag()))
                     .flat_map(|x| x.attributes().get("src"))
                     .flatten()
                     .flat_map(|x| x.try_as_utf8_str())
                     .flat_map(parse_data_url)
-                    .map(|(img_type, s)| {
-                        (
-                            img_type,
-                            SourceValueWrap::Owned(SourceValue::String(s.to_string())),
-                        )
-                    });
+                    .map(|(img_type, s)| (img_type, SourceValueWrap::Owned(s.to_string())));
                 out.extend(img_iter);
             }
             // let cell_doc = Html::parse_document(val)
         } else if let Some(image_type) = get_image_type(mime) {
             // don't push the json data here so we don't have to process it later
             match val {
-                SourceValue::String(_) | SourceValue::StringArray(_) => {
-                    out.push((image_type, SourceValueWrap::Borrowed(val.to_ref())))
+                SourceValue::String(s) => out.push((
+                    image_type,
+                    SourceValueWrap::Borrowed(SourceValueRef::String(s)),
+                )),
+                SourceValue::StringArray(sa) => out.push((
+                    image_type,
+                    SourceValueWrap::Borrowed(SourceValueRef::StringArray(sa)),
+                )),
+                SourceValue::JsonData(_) => {
+                    eprintln!("Warning: skipping {mime} output with unexpected JSON data")
                 }
-
-                _ => {}
             };
         }
     }
     out
 }
-fn checked_create_dir<P: AsRef<Path>>(
-    path: P,
+fn checked_create_dir(
+    path: &Path,
     exist_action: NonEmptyDirAction,
     dry_run: bool,
 ) -> anyhow::Result<()> {
     use NonEmptyDirAction::*;
-    let path = path.as_ref();
     if !path.exists() || exist_action == Proceed {
         if !dry_run {
             create_dir_all(path)?;
@@ -365,7 +348,7 @@ fn checked_create_dir<P: AsRef<Path>>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     fn code_cell(v: Value) -> CodeCell {
         serde_json::from_value(v).unwrap()
@@ -422,50 +405,56 @@ mod tests {
         assert_eq!(get_comment_label("# my label: x"), vec!["x"]);
     }
 
+    fn tags(v: &[&str]) -> Option<Vec<String>> {
+        Some(v.iter().map(|s| (*s).to_owned()).collect())
+    }
+
     #[test]
     fn tag_candidate_strips_prefix_and_trim_chars() {
-        let tags = Some(vec!["img-my-png"]);
         assert_eq!(
-            get_image_candidate_tags(&tags, "img"),
+            get_image_candidate_tags(&tags(&["img-my-png"]), "img"),
             Some("my-png".to_owned())
         );
-        let tags = Some(vec!["img_ -name"]);
         assert_eq!(
-            get_image_candidate_tags(&tags, "img"),
+            get_image_candidate_tags(&tags(&["img_ -name"]), "img"),
             Some("name".to_owned())
         );
-        let tags = Some(vec!["img name"]);
         assert_eq!(
-            get_image_candidate_tags(&tags, "img"),
+            get_image_candidate_tags(&tags(&["img name"]), "img"),
             Some("name".to_owned())
         );
     }
 
     #[test]
     fn tag_candidate_first_of_multiple_wins() {
-        let tags = Some(vec!["img-a", "img-b"]);
-        assert_eq!(get_image_candidate_tags(&tags, "img"), Some("a".to_owned()));
+        assert_eq!(
+            get_image_candidate_tags(&tags(&["img-a", "img-b"]), "img"),
+            Some("a".to_owned())
+        );
     }
 
     #[test]
     fn tag_candidate_no_match() {
-        let tags = Some(vec!["hello", "world"]);
-        assert_eq!(get_image_candidate_tags(&tags, "img"), None);
-        assert_eq!(get_image_candidate_tags(&None::<Vec<String>>, "img"), None);
+        assert_eq!(
+            get_image_candidate_tags(&tags(&["hello", "world"]), "img"),
+            None
+        );
+        assert_eq!(get_image_candidate_tags(&None, "img"), None);
     }
 
     #[test]
     fn tag_candidate_tag_equal_to_prefix_gives_empty_name() {
         // degenerate edge: documents current behavior
-        let tags = Some(vec!["img"]);
-        assert_eq!(get_image_candidate_tags(&tags, "img"), Some(String::new()));
+        assert_eq!(
+            get_image_candidate_tags(&tags(&["img"]), "img"),
+            Some(String::new())
+        );
     }
 
     #[test]
     fn tag_candidate_empty_prefix_matches_everything() {
-        let tags = Some(vec!["-first", "second"]);
         assert_eq!(
-            get_image_candidate_tags(&tags, ""),
+            get_image_candidate_tags(&tags(&["-first", "second"]), ""),
             Some("first".to_owned())
         );
     }
@@ -577,10 +566,10 @@ mod tests {
         let out = get_image_data(&bundle);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].0, ImageType::Png);
-        match out[0].1.to_ref() {
-            SourceValueRef::String(s) => assert_eq!(s, "b64data"),
-            other => panic!("expected borrowed string, got {other:?}"),
-        }
+        assert!(matches!(
+            out[0].1.to_ref(),
+            SourceValueRef::String("b64data")
+        ));
     }
 
     #[test]
@@ -589,10 +578,10 @@ mod tests {
         let out = get_image_data(&bundle);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].0, ImageType::Svg);
-        match out[0].1.to_ref() {
-            SourceValueRef::StringArray(sa) => assert_eq!(sa, ["<svg>", "</svg>"]),
-            other => panic!("expected string array, got {other:?}"),
-        }
+        assert!(matches!(
+            out[0].1.to_ref(),
+            SourceValueRef::StringArray(sa) if sa == ["<svg>", "</svg>"]
+        ));
     }
 
     #[test]
@@ -619,10 +608,7 @@ mod tests {
         let out = get_image_data(&bundle);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].0, ImageType::Png);
-        match &out[0].1 {
-            SourceValueWrap::Owned(SourceValue::String(s)) => assert_eq!(s, "AAAA"),
-            other => panic!("expected owned string, got {other:?}"),
-        }
+        assert!(matches!(&out[0].1, SourceValueWrap::Owned(s) if s == "AAAA"));
     }
 
     #[test]
@@ -636,24 +622,50 @@ mod tests {
     }
 
     #[test]
-    fn image_data_multiple_image_mimes() {
-        // MimeBundle is a HashMap, so iteration order is nondeterministic:
-        // assert order-insensitively
+    fn image_data_multiple_image_mimes_in_document_order() {
+        // MimeBundle is an IndexMap, so images come out in the order the
+        // mime types appear in the notebook
         let bundle = mime_bundle(json!({"image/png": "a", "image/gif": "b"}));
-        let mut types: Vec<_> = get_image_data(&bundle)
+        let types: Vec<_> = get_image_data(&bundle)
             .iter()
             .map(|(t, _)| t.get_extension())
             .collect();
-        types.sort_unstable();
-        assert_eq!(types, ["gif", "png"]);
+        assert_eq!(types, ["png", "gif"]);
     }
 
     #[test]
-    #[should_panic(expected = "Should be a string array")]
-    fn image_data_panics_on_json_valued_html() {
-        // documents current behavior: text/html with non-string data panics
+    fn image_data_skips_json_valued_html() {
+        // malformed input (nbformat requires strings here): skipped with a
+        // warning rather than aborting
         let bundle = mime_bundle(json!({"text/html": 3}));
-        get_image_data(&bundle);
+        assert!(get_image_data(&bundle).is_empty());
+    }
+
+    #[test]
+    fn default_output_path_next_to_input() {
+        assert_eq!(
+            default_output_path(Path::new("dir/nb.ipynb")).unwrap(),
+            PathBuf::from("dir/nb_images")
+        );
+        assert_eq!(
+            default_output_path(Path::new("nb.ipynb")).unwrap(),
+            PathBuf::from("nb_images")
+        );
+    }
+
+    #[test]
+    fn default_output_path_rejects_stemless_paths() {
+        let err = default_output_path(Path::new("..")).unwrap_err();
+        assert!(err.to_string().contains("Input filename is empty"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn default_output_path_rejects_non_utf8_names() {
+        use std::os::unix::ffi::OsStrExt;
+        let path = Path::new(std::ffi::OsStr::from_bytes(b"nb\xff.ipynb"));
+        let err = default_output_path(path).unwrap_err();
+        assert!(err.to_string().contains("Bad file name"));
     }
 
     #[test]

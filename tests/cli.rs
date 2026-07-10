@@ -207,6 +207,132 @@ fn conflicting_dir_action_flags_rejected() {
         .stderr(predicate::str::contains("cannot be used with"));
 }
 
+/// Write a minimal notebook with the given cells to `dir` and return its path.
+fn write_notebook(dir: &Path, cells: serde_json::Value) -> PathBuf {
+    let nb = serde_json::json!({
+        "cells": cells,
+        "metadata": {},
+        "nbformat": 4,
+        "nbformat_minor": 5
+    });
+    let path = dir.join("crafted.ipynb");
+    fs::write(&path, nb.to_string()).unwrap();
+    path
+}
+
+#[test]
+fn notebook_without_images_creates_no_output_dir() {
+    let tmp = tempfile::tempdir().unwrap();
+    let nb = write_notebook(
+        tmp.path(),
+        serde_json::json!([
+            {"cell_type": "markdown", "metadata": {}, "source": "# heading"},
+            {
+                "cell_type": "code",
+                "metadata": {},
+                "source": "print('hi')",
+                "outputs": [{"output_type": "stream", "name": "stdout", "text": ["hi\n"]}],
+                "execution_count": 1
+            }
+        ]),
+    );
+    let out = tmp.path().join("out");
+    bin()
+        .arg(&nb)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+    assert!(!out.exists());
+}
+
+#[test]
+fn string_array_binary_data_errors() {
+    let tmp = tempfile::tempdir().unwrap();
+    // binary image mimes must hold base64 strings, not line arrays
+    let nb = write_notebook(
+        tmp.path(),
+        serde_json::json!([{
+            "cell_type": "code",
+            "metadata": {},
+            "source": "plot()",
+            "outputs": [{
+                "output_type": "display_data",
+                "data": {"image/png": ["QUJD"]},
+                "metadata": {}
+            }],
+            "execution_count": 1
+        }]),
+    );
+    bin()
+        .arg(&nb)
+        .arg("-o")
+        .arg(tmp.path().join("out"))
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Expected binary data"));
+}
+
+#[test]
+fn invalid_base64_errors() {
+    let tmp = tempfile::tempdir().unwrap();
+    let nb = write_notebook(
+        tmp.path(),
+        serde_json::json!([{
+            "cell_type": "code",
+            "metadata": {},
+            "source": "plot()",
+            "outputs": [{
+                "output_type": "display_data",
+                "data": {"image/png": "not!!valid@@base64"},
+                "metadata": {}
+            }],
+            "execution_count": 1
+        }]),
+    );
+    bin()
+        .arg(&nb)
+        .arg("-o")
+        .arg(tmp.path().join("out"))
+        .assert()
+        .failure();
+}
+
+#[test]
+fn json_valued_mime_data_skipped_with_warning() {
+    let tmp = tempfile::tempdir().unwrap();
+    // schema-invalid: non-JSON mimes must hold strings, not JSON values
+    let nb = write_notebook(
+        tmp.path(),
+        serde_json::json!([{
+            "cell_type": "code",
+            "metadata": {},
+            "source": "plot()",
+            "outputs": [{
+                "output_type": "display_data",
+                "data": {"text/html": 3, "image/png": {"unexpected": true}},
+                "metadata": {}
+            }],
+            "execution_count": 1
+        }]),
+    );
+    let out = tmp.path().join("out");
+    bin()
+        .arg(&nb)
+        .arg("-o")
+        .arg(&out)
+        .assert()
+        .success()
+        .stderr(predicate::str::contains(
+            "Warning: skipping text/html output with unexpected JSON data",
+        ))
+        .stderr(predicate::str::contains(
+            "Warning: skipping image/png output with unexpected JSON data",
+        ));
+    assert!(!out.exists());
+}
+
 #[test]
 fn nonexistent_input_fails() {
     let tmp = tempfile::tempdir().unwrap();

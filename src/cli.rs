@@ -126,6 +126,14 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Multiple flags set")]
+    fn get_action_panics_on_multiple_flags() {
+        // clap prevents this combination; constructing it directly hits the
+        // unreachable arm
+        flags(true, true, false).get_action();
+    }
+
+    #[test]
     fn parse_defaults() {
         let cli = Cli::try_parse_from(["nbimgextract", "f.ipynb"]).unwrap();
         assert_eq!(cli.file, PathBuf::from("f.ipynb"));

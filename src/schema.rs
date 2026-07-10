@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -119,7 +118,9 @@ pub enum SourceValue {
     #[allow(dead_code)]
     JsonData(Value),
 }
-pub type MimeBundle = HashMap<String, SourceValue>;
+// IndexMap preserves the notebook's mime-type order, so extraction (and the
+// -1/-2 numbering of multi-image cells) is deterministic
+pub type MimeBundle = IndexMap<String, SourceValue>;
 
 impl SourceValue {
     pub fn to_string_array(&self) -> Option<Vec<&str>> {

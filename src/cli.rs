@@ -88,3 +88,103 @@ pub enum NonEmptyDirAction {
     ClearDir,
     Proceed,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn flags(error: bool, clear_dir: bool, proceed: bool) -> NonEmptyDirActionFlags {
+        NonEmptyDirActionFlags {
+            error,
+            clear_dir,
+            proceed,
+        }
+    }
+
+    #[test]
+    fn get_action_defaults_to_error() {
+        assert_eq!(
+            flags(false, false, false).get_action(),
+            NonEmptyDirAction::Error
+        );
+    }
+
+    #[test]
+    fn get_action_single_flags() {
+        assert_eq!(
+            flags(true, false, false).get_action(),
+            NonEmptyDirAction::Error
+        );
+        assert_eq!(
+            flags(false, true, false).get_action(),
+            NonEmptyDirAction::ClearDir
+        );
+        assert_eq!(
+            flags(false, false, true).get_action(),
+            NonEmptyDirAction::Proceed
+        );
+    }
+
+    #[test]
+    fn parse_defaults() {
+        let cli = Cli::try_parse_from(["nbimgextract", "f.ipynb"]).unwrap();
+        assert_eq!(cli.file, PathBuf::from("f.ipynb"));
+        assert_eq!(cli.output_path, None);
+        assert_eq!(cli.tag_prefix, None);
+        assert!(!cli.quiet);
+        assert!(!cli.dry_run);
+        assert_eq!(cli.non_empty_action.get_action(), NonEmptyDirAction::Error);
+    }
+
+    #[test]
+    fn parse_requires_file() {
+        assert!(Cli::try_parse_from(["nbimgextract"]).is_err());
+    }
+
+    #[test]
+    fn parse_output_path_and_tag_prefix() {
+        let cli =
+            Cli::try_parse_from(["nbimgextract", "f.ipynb", "-o", "out", "-t", "fig"]).unwrap();
+        assert_eq!(cli.output_path, Some(PathBuf::from("out")));
+        assert_eq!(cli.tag_prefix.as_deref(), Some("fig"));
+    }
+
+    #[test]
+    fn parse_dir_action_flags() {
+        let cli = Cli::try_parse_from(["nbimgextract", "f.ipynb", "--clear-dir"]).unwrap();
+        assert_eq!(
+            cli.non_empty_action.get_action(),
+            NonEmptyDirAction::ClearDir
+        );
+        let cli = Cli::try_parse_from(["nbimgextract", "f.ipynb", "--proceed"]).unwrap();
+        assert_eq!(
+            cli.non_empty_action.get_action(),
+            NonEmptyDirAction::Proceed
+        );
+    }
+
+    #[test]
+    fn parse_dir_action_flags_are_exclusive() {
+        assert!(
+            Cli::try_parse_from(["nbimgextract", "f.ipynb", "--clear-dir", "--proceed"]).is_err()
+        );
+    }
+
+    #[test]
+    fn parse_dry_run_last_flag_wins() {
+        let cli =
+            Cli::try_parse_from(["nbimgextract", "f.ipynb", "--dry-run", "--write-files"]).unwrap();
+        assert!(!cli.dry_run);
+        let cli =
+            Cli::try_parse_from(["nbimgextract", "f.ipynb", "--write-files", "--dry-run"]).unwrap();
+        assert!(cli.dry_run);
+    }
+
+    #[test]
+    fn parse_quiet_last_flag_wins() {
+        let cli = Cli::try_parse_from(["nbimgextract", "f.ipynb", "-q"]).unwrap();
+        assert!(cli.quiet);
+        let cli = Cli::try_parse_from(["nbimgextract", "f.ipynb", "-q", "-Q"]).unwrap();
+        assert!(!cli.quiet);
+    }
+}

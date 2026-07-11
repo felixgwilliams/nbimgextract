@@ -26,20 +26,20 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: ubuntu-22.04
+          - runner: ubuntu-latest
             target: x86_64
-          - runner: ubuntu-22.04
+          - runner: ubuntu-latest
             target: x86
-          - runner: ubuntu-22.04
+          - runner: ubuntu-latest
             target: aarch64
-          - runner: ubuntu-22.04
+          - runner: ubuntu-latest
             target: armv7
-          - runner: ubuntu-22.04
+          - runner: ubuntu-latest
             target: s390x
-          - runner: ubuntu-22.04
+          - runner: ubuntu-latest
             target: ppc64le
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -55,18 +55,21 @@ jobs:
             if [ "$TARGET_TRIPLE" == 'release' ]; then
               continue
             fi
+            if [ "$TARGET_TRIPLE" == 'maturin' ]; then
+              continue
+            fi
             ARCHIVE_FILE=nbimgextract-${TARGET_TRIPLE}.tar.gz
             echo $ARCHIVE_FILE
             tar czvf $ARCHIVE_FILE -C ${dir}release nbimgextract
             shasum -a 256 $ARCHIVE_FILE > $ARCHIVE_FILE.sha256
           done
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wheels-linux-${{ matrix.platform.target }}
           path: dist
       - name: "Upload binary"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-linux-${{ matrix.platform.target }}
           path: |
@@ -78,16 +81,16 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: ubuntu-22.04
+          - runner: ubuntu-latest
             target: x86_64
-          - runner: ubuntu-22.04
+          - runner: ubuntu-latest
             target: x86
-          - runner: ubuntu-22.04
+          - runner: ubuntu-latest
             target: aarch64
-          - runner: ubuntu-22.04
+          - runner: ubuntu-latest
             target: armv7
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -103,18 +106,21 @@ jobs:
             if [ "$TARGET_TRIPLE" == 'release' ]; then
               continue
             fi
+            if [ "$TARGET_TRIPLE" == 'maturin' ]; then
+              continue
+            fi
             ARCHIVE_FILE=nbimgextract-${TARGET_TRIPLE}.tar.gz
             echo $ARCHIVE_FILE
             tar czvf $ARCHIVE_FILE -C ${dir}release nbimgextract
             shasum -a 256 $ARCHIVE_FILE > $ARCHIVE_FILE.sha256
           done
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wheels-musllinux-${{ matrix.platform.target }}
           path: dist
       - name: "Upload binary"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-musllinux-${{ matrix.platform.target }}
           path: |
@@ -130,7 +136,7 @@ jobs:
           - runner: windows-latest
             target: x86
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -146,22 +152,25 @@ jobs:
             if [ "$TARGET_TRIPLE" == 'release' ]; then
               continue
             fi
+            if [ "$TARGET_TRIPLE" == 'maturin' ]; then
+              continue
+            fi
             ARCHIVE_FILE=nbimgextract-${TARGET_TRIPLE}.zip
             echo $ARCHIVE_FILE
             7z a $ARCHIVE_FILE ./${dir}release/nbimgextract.exe
             sha256sum $ARCHIVE_FILE > $ARCHIVE_FILE.sha256
           done
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wheels-windows-${{ matrix.platform.target }}
           path: dist
       - name: "Upload binary"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-windows-${{ matrix.platform.target }}
           path: |
-            *.tar.gz
+            *.zip
             *.sha256
 
   macos:
@@ -169,12 +178,12 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: macos-13
+          - runner: macos-latest
             target: x86_64
-          - runner: macos-14
+          - runner: macos-latest
             target: aarch64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -189,18 +198,21 @@ jobs:
             if [ "$TARGET_TRIPLE" == 'release' ]; then
               continue
             fi
+            if [ "$TARGET_TRIPLE" == 'maturin' ]; then
+              continue
+            fi
             ARCHIVE_FILE=nbimgextract-${TARGET_TRIPLE}.tar.gz
             echo $ARCHIVE_FILE
             tar czvf $ARCHIVE_FILE -C ${dir}/release nbimgextract
             shasum -a 256 $ARCHIVE_FILE > $ARCHIVE_FILE.sha256
           done
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wheels-macos-${{ matrix.platform.target }}
           path: dist
       - name: "Upload binary"
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: binaries-macos-${{ matrix.platform.target }}
           path: |
@@ -210,14 +222,14 @@ jobs:
   sdist:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
           command: sdist
           args: --out dist
       - name: Upload sdist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wheels-sdist
           path: dist
@@ -225,10 +237,10 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ inputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Get package version
         id: cargo-get
-        uses: nicolaiunrein/cargo-get@v1.1.0
+        uses: nicolaiunrein/cargo-get@v1.4.0
         with:
           subcommand: package.version --pretty
       - name: check matches
@@ -249,13 +261,13 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: wheels-*
           merge-multiple: true
           path: wheels
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: binaries-*
           merge-multiple: true
@@ -268,7 +280,7 @@ jobs:
     needs: [release_github]
     environment: release
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: wheels-*
           merge-multiple: true

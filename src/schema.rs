@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -39,7 +38,7 @@ pub enum Cell {
 }
 
 impl Cell {
-    pub fn get_code_cell(&self) -> Option<&CodeCell> {
+    pub const fn get_code_cell(&self) -> Option<&CodeCell> {
         match self {
             Self::Code(cell) => Some(cell),
             _ => None,
@@ -93,7 +92,7 @@ pub enum Output {
 }
 
 impl Output {
-    fn get_display_data(&self) -> Option<&MimeBundle> {
+    const fn get_display_data(&self) -> Option<&MimeBundle> {
         match self {
             Self::DisplayData(out) => Some(&out.data),
             Self::ExecuteResult(out) => Some(&out.data),
@@ -119,13 +118,15 @@ pub enum SourceValue {
     #[allow(dead_code)]
     JsonData(Value),
 }
-pub type MimeBundle = HashMap<String, SourceValue>;
+// IndexMap preserves the notebook's mime-type order, so extraction (and the
+// -1/-2 numbering of multi-image cells) is deterministic
+pub type MimeBundle = IndexMap<String, SourceValue>;
 
 impl SourceValue {
     pub fn to_string_array(&self) -> Option<Vec<&str>> {
         match self {
             Self::JsonData(_) => None,
-            Self::StringArray(sa) => Some(sa.iter().map(|s| s.as_str()).collect()),
+            Self::StringArray(sa) => Some(sa.iter().map(std::string::String::as_str).collect()),
             Self::String(s) => Some(s.split_inclusive('\n').collect()),
         }
     }
@@ -140,4 +141,103 @@ pub struct DisplayDataOut {
 #[derive(Debug, Deserialize, Clone)]
 pub struct ExecuteResultOut {
     pub data: MimeBundle,
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use super::*;
+    use serde_json::json;
+
+    fn source_value(v: Value) -> SourceValue {
+        serde_json::from_value(v).unwrap()
+    }
+
+    #[test]
+    fn source_value_deserializes_untagged_variants_in_order() {
+        assert!(matches!(source_value(json!("s")), SourceValue::String(_)));
+        assert!(matches!(
+            source_value(json!(["a"])),
+            SourceValue::StringArray(_)
+        ));
+        assert!(matches!(
+            source_value(json!({"k": 1})),
+            SourceValue::JsonData(_)
+        ));
+        assert!(matches!(source_value(json!(3)), SourceValue::JsonData(_)));
+    }
+
+    #[test]
+    fn to_string_array_splits_string_keeping_newlines() {
+        let sv = source_value(json!("a\nb\nc"));
+        assert_eq!(sv.to_string_array(), Some(vec!["a\n", "b\n", "c"]));
+        let sv = source_value(json!("a\n"));
+        assert_eq!(sv.to_string_array(), Some(vec!["a\n"]));
+    }
+
+    #[test]
+    fn to_string_array_passes_through_string_array() {
+        let sv = source_value(json!(["x", "y"]));
+        assert_eq!(sv.to_string_array(), Some(vec!["x", "y"]));
+    }
+
+    #[test]
+    fn to_string_array_is_none_for_json_data() {
+        let sv = source_value(json!({"model_id": "abc"}));
+        assert_eq!(sv.to_string_array(), None);
+    }
+
+    #[test]
+    fn get_code_cell_filters_cell_types() {
+        let markdown: Cell = serde_json::from_value(json!({
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": "# heading"
+        }))
+        .unwrap();
+        assert!(markdown.get_code_cell().is_none());
+
+        let code: Cell = serde_json::from_value(json!({
+            "cell_type": "code",
+            "metadata": {},
+            "outputs": [],
+            "source": "x = 1"
+        }))
+        .unwrap();
+        assert!(code.get_code_cell().is_some());
+    }
+
+    #[test]
+    fn get_output_data_keeps_only_data_outputs() {
+        let cell: CodeCell = serde_json::from_value(json!({
+            "metadata": {},
+            "source": "plot()",
+            "outputs": [
+                {"output_type": "stream", "name": "stdout", "text": ["hi\n"]},
+                {"output_type": "display_data", "data": {"image/png": "AAAA"}, "metadata": {}},
+                {"output_type": "error", "ename": "E", "evalue": "boom", "traceback": []},
+                {"output_type": "execute_result", "data": {"text/plain": "1"}, "metadata": {}, "execution_count": 1}
+            ]
+        }))
+        .unwrap();
+        let data = cell.get_output_data();
+        assert_eq!(data.len(), 2);
+        assert!(data[0].contains_key("image/png"));
+        assert!(data[1].contains_key("text/plain"));
+    }
+
+    #[test]
+    fn parses_example_notebook() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/example.ipynb");
+        let file = std::fs::File::open(path).unwrap();
+        let nb: RawNotebook = serde_json::from_reader(std::io::BufReader::new(file)).unwrap();
+        assert_eq!(nb.cells.len(), 13);
+        let n_code = nb
+            .cells
+            .iter()
+            .filter(|c| c.get_code_cell().is_some())
+            .count();
+        assert_eq!(n_code, 10);
+    }
 }

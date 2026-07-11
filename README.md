@@ -2,6 +2,7 @@
 
 [![License:MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyPI - Version](https://img.shields.io/pypi/v/nbimgextract)](https://pypi.org/project/nbimgextract/)
+[![codecov](https://codecov.io/gh/felixgwilliams/nbimgextract/graph/badge.svg?token=YC1FQQVRFM)](https://codecov.io/gh/felixgwilliams/nbimgextract)
 
 nbimgextract is a command-line tool for extracting images from Jupyter Notebooks.
 
@@ -31,7 +32,7 @@ Non Empty Dir Actions:
 
 ## Output File Names
 
-By default, the names of the image files extracted from a notebook are based on the ordinal number of the cell.
+By default, the names of the image files extracted from a notebook are based on the ordinal number of the cell, zero-padded to the width of the cell count: for example, the image from the third cell of a 13-cell notebook is named `img-03`.
 
 However, you can also specify the desired file names within the notebook in a few ways.
 
@@ -39,13 +40,21 @@ However, you can also specify the desired file names within the notebook in a fe
 2. Cell tag
 
 If a cell has a valid comment and a valid tag, the comment has priority.
-If a cell produces multiple images/plots, these will be numbered.
+If a cell produces multiple images/plots, these will be numbered: `name-1`, `name-2`, and so on.
+If two cells would produce the same file name, the later one gets a numeric suffix; images never silently overwrite each other.
+
+Labels must be plain file names: a label containing a path separator or `..` is ignored with a warning, and files are always written inside the output directory.
 
 ### Comment
 
 nbimagextract allows you to specify the desired image filename via a comment in the cell's code.
-To be detected, the comment needs to contain the substring `label:` followed by the desired filename.
-Any whitespace will be trimmed.
+To be detected, the comment must begin with `label:` — after the `#` and an optional `|` — followed by the desired filename.
+Both `# label: name` and Quarto's `#| label: name` forms work; comments that merely contain the word, such as `# xlabel: time`, do not set the name.
+Any whitespace around the filename will be trimmed.
+
+The comment must appear in the cell's leading comment block: the comment lines at the very top of the cell, before the first code or blank line.
+A `label:` comment further down the cell is ignored.
+
 For example, the plot produced by the cell with the following code will be saved as `sin-plot`.
 
 ```python
@@ -55,7 +64,7 @@ y = np.sin(x)
 plt.plot(x, y)
 ```
 
-[Quarto](https://quarto.org/docs/authoring/figures.html#cross-references) uses a similar convention for applying labels to plots for the purposes of cross referencing.
+This closely follows the convention [Quarto](https://quarto.org/docs/authoring/figures.html#cross-references) uses for applying labels to plots for the purposes of cross referencing, with the `|` after the `#` made optional.
 
 ### Cell Tags
 

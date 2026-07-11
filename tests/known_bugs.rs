@@ -1,16 +1,9 @@
-//! Tests documenting known bugs.
+//! Regression tests for previously-known bugs — all fixed.
 //!
-//! Each test asserts the CORRECT behavior; tests for bugs not yet fixed are
-//! `#[ignore]`d. Once a bug is fixed, its `#[ignore]` is removed and the test
-//! serves as a regression test.
-//! Note: one existing test codifies buggy behavior and must be removed along
-//! with the fix it contradicts:
-//! - `src/main.rs::tests::comment_label_matches_anywhere_in_comment`
-//!   (contradicts bug 13)
-//!
-//! Likewise for bug 14,
-//! `src/main.rs::tests::comment_label_multiple_lines_in_order` contradicts a
-//! fix made inside `get_comment_label`, but survives one made in its caller.
+//! Each test asserts the CORRECT behavior and is numbered for the bug it
+//! guards against; the doc comments describe the original buggy behavior
+//! and the shape of the fix. Should a new bug be documented here before its
+//! fix lands, mark its test `#[ignore = "known bug N: ..."]` until then.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -425,14 +418,14 @@ fn png_cell_src(source: &str) -> serde_json::Value {
     })
 }
 
-/// Bug 13: `label:` is located by substring search (`split_once`), not
-/// anchored to the start of the comment, so unrelated comments like
-/// `# xlabel: time (s)` or `# my label: x` hijack the image name. The label
+/// Bug 13 (fixed): `label:` was located by substring search (`split_once`),
+/// not anchored to the start of the comment, so unrelated comments like
+/// `# xlabel: time (s)` or `# my label: x` hijacked the image name. The label
 /// convention is modeled on Quarto's `#| label:` directive with the bar made
 /// optional: a comment must BEGIN with `label:` (after `#` and an optional
 /// `|`) to name the image; anything else falls back to the positional name.
-/// The Quarto form itself (`#| label: good`) already works and must keep
-/// working after the fix.
+/// The Quarto form itself (`#| label: good`) worked all along and must keep
+/// working.
 #[test]
 fn label_must_start_the_comment() {
     let tmp = tempfile::tempdir().unwrap();
@@ -460,10 +453,10 @@ fn label_must_start_the_comment() {
     );
 }
 
-/// Bug 14: a `# label:` comment is honored on any line of the cell, but
-/// (following the Quarto convention) only the cell's leading comment block
-/// should be scanned: a label comment after the first code line must not
-/// name the image.
+/// Bug 14 (fixed): a `# label:` comment was honored on any line of the cell,
+/// but (following the Quarto convention) only the cell's leading comment
+/// block may name the image: labels are now taken from the lines before the
+/// first non-comment line only.
 #[test]
 fn label_only_in_leading_comment_block() {
     let tmp = tempfile::tempdir().unwrap();

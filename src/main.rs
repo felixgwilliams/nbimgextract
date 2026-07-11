@@ -53,7 +53,6 @@ fn main() -> anyhow::Result<()> {
     let mut to_write = Vec::new();
     let mut used_names: HashMap<String, usize> = HashMap::new();
 
-    // let mut cell_images: Vec::new();
     for (i, cell) in nb
         .cells
         .iter()
@@ -199,24 +198,21 @@ fn make_write_message(cli: &cli::Cli, file_name: &Path) {
     }
 }
 static LABEL: &str = "label:";
+
+/// The trimmed label if the line is a `# label:`/`#| label:` comment.
 fn line_label(line: &str) -> Option<&str> {
     let rest = line.trim_start().strip_prefix('#')?;
     let rest = rest.strip_prefix('|').unwrap_or(rest);
     Some(rest.trim_start().strip_prefix(LABEL)?.trim())
 }
+
 /// Get a list of labels provided as comments
 fn get_comment_label(source: &str) -> Vec<&str> {
-    let mut comments = Vec::new();
-    for line in source.lines() {
-        if let Some(identifier) = line_label(line) {
-            let identifier = identifier.trim();
-            if !identifier.is_empty() {
-                comments.push(identifier);
-            }
-        }
-    }
-
-    comments
+    source
+        .lines()
+        .filter_map(line_label)
+        .filter(|identifier| !identifier.is_empty())
+        .collect()
 }
 /// A label is only usable as a file stem if it stays inside the output
 /// directory: exactly one normal path component (no `..`, `/`, absolute

@@ -2,6 +2,7 @@
 
 [![License:MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyPI - Version](https://img.shields.io/pypi/v/nbimgextract)](https://pypi.org/project/nbimgextract/)
+[![codecov](https://codecov.io/gh/felixgwilliams/nbimgextract/graph/badge.svg?token=YC1FQQVRFM)](https://codecov.io/gh/felixgwilliams/nbimgextract)
 
 nbimgextract is a command-line tool for extracting images from Jupyter Notebooks.
 

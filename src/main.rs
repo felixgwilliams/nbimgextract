@@ -84,39 +84,36 @@ fn main() -> anyhow::Result<()> {
         let file_name = output_path
             .join(item.name)
             .with_added_extension(item.image_type.get_extension());
+        if file_name.parent() != Some(output_path.as_path()) {
+            bail!(
+                "Output file {} is not a direct child of output path {}",
+                file_name.display(),
+                output_path.display()
+            );
+        }
         if !cli.quiet {
             make_write_message(&cli, &file_name);
         }
         if cli.dry_run {
             continue;
         }
-        match item.image_json_data.to_ref() {
-            SourceValueRef::String(image_data) => {
-                if item.image_type == ImageType::Svg {
-                    let mut buf = BufWriter::new(File::create(file_name)?);
-                    if !has_xml_decl(image_data) {
-                        buf.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")?;
-                    }
-                    buf.write_all(image_data.as_bytes())?;
-                } else {
-                    let image_bytes = BASE64_STANDARD.decode(image_data)?;
-                    BufWriter::new(File::create(file_name)?).write_all(&image_bytes)?;
-                }
-            }
-            SourceValueRef::StringArray(arr) => {
-                if item.image_type != ImageType::Svg {
-                    bail!("Expected binary data.".red())
-                }
-                let svg_data = arr
-                    .iter()
+        let image_data = match item.image_json_data.to_ref() {
+            SourceValueRef::String(image_data) => Cow::Borrowed(image_data),
+            SourceValueRef::StringArray(arr) => Cow::Owned(
+                arr.iter()
                     .map(std::string::String::as_str)
-                    .collect::<String>();
-                let mut buf = BufWriter::new(File::create(file_name)?);
-                if !has_xml_decl(&svg_data) {
-                    buf.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")?;
-                }
-                buf.write_all(svg_data.as_bytes())?;
+                    .collect::<String>(),
+            ),
+        };
+        if item.image_type == ImageType::Svg {
+            let mut buf = BufWriter::new(File::create(file_name)?);
+            if !has_xml_decl(&image_data) {
+                buf.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")?;
             }
+            buf.write_all(image_data.as_bytes())?;
+        } else {
+            let image_bytes = BASE64_STANDARD.decode(image_data.trim().as_bytes())?;
+            BufWriter::new(File::create(file_name)?).write_all(&image_bytes)?;
         }
     }
 
@@ -216,10 +213,24 @@ fn get_comment_label(source: &str) -> Vec<&str> {
 
     comments
 }
-
+/// A label is only usable as a file stem if it stays inside the output
+/// directory: exactly one normal path component (no `..`, `/`, absolute
+/// paths, or drive prefixes).
+fn is_safe_name(name: &str) -> bool {
+    let mut components = Path::new(name).components();
+    matches!(components.next(), Some(std::path::Component::Normal(_)))
+        && components.next().is_none()
+}
 fn get_image_candidate(cell: &CodeCell, tag_prefix: &str) -> Option<String> {
     get_image_candidate_comment(cell)
         .or_else(|| get_image_candidate_tags(cell.metadata.tags.as_deref(), tag_prefix))
+        .filter(|name| {
+            let ok = is_safe_name(name);
+            if !ok {
+                eprintln!("Warning: ignoring unsafe label {name:?}");
+            }
+            ok
+        })
 }
 fn get_image_candidate_comment(cell: &CodeCell) -> Option<String> {
     cell.source.to_string_array().and_then(|sa| {
@@ -275,8 +286,11 @@ fn get_image_type(mime: &str) -> Option<ImageType> {
 
 fn parse_data_url(data_url: &str) -> Option<(ImageType, &str)> {
     let strip = data_url.strip_prefix("data:")?;
-    let (mime_str_base64, body_str) = strip.split_once(',')?;
-    let mime_str = mime_str_base64.strip_suffix(";base64")?;
+    let (mime_str_params_base64, body_str) = strip.split_once(',')?;
+    let mime_str_params = mime_str_params_base64.strip_suffix(";base64")?;
+    let mime_str = mime_str_params
+        .split_once(';')
+        .map_or(mime_str_params, |x| x.0);
     let image_type = get_image_type(mime_str)?;
     Some((image_type, body_str))
 }
@@ -330,19 +344,23 @@ fn get_image_data(data: &MimeBundle) -> Vec<(ImageType, SourceValueWrap<'_>)> {
             };
             let frag2 = tl::parse(&joined_string, tl::ParserOptions::default())
                 .expect("tl only fails to parse HTML larger than u32::MAX");
-            let parser = frag2.parser();
-            let img = frag2
-                .query_selector("img[src]")
-                .expect("query_selector only fails for invalid selectors; this one is static");
-            let img_iter = img
-                .filter_map(|x| x.get(parser).and_then(|x| x.as_tag()))
-                .filter_map(|x| x.attributes().get("src"))
-                .flatten()
-                .filter_map(|x| x.try_as_utf8_str())
-                .filter_map(parse_data_url)
-                .map(|(img_type, s)| (img_type, SourceValueWrap::Owned(s.to_string())));
+            let img_iter = frag2
+                .nodes()
+                .iter()
+                .filter_map(|node| node.as_tag())
+                .filter(|tag| tag.name().as_bytes().eq_ignore_ascii_case(b"img"))
+                .filter_map(|tag| {
+                    tag.attributes()
+                        .iter()
+                        .find(|(key, _)| key.eq_ignore_ascii_case("src"))
+                        .and_then(|(_, value)| value)
+                })
+                .filter_map(|src| {
+                    parse_data_url(&src)
+                        .map(|(img_type, s)| (img_type, SourceValueWrap::Owned(s.to_string())))
+                });
+
             out.extend(img_iter);
-            // let cell_doc = Html::parse_document(val)
         } else if let Some(image_type) = get_image_type(mime) {
             // don't push the json data here so we don't have to process it later
             match val {

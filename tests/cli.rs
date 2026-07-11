@@ -248,9 +248,10 @@ fn notebook_without_images_creates_no_output_dir() {
 }
 
 #[test]
-fn string_array_binary_data_errors() {
+fn string_array_binary_data_is_ok() {
     let tmp = tempfile::tempdir().unwrap();
-    // binary image mimes must hold base64 strings, not line arrays
+    // per nbformat, non-JSON mime data may be a single string or an array of
+    // lines; base64 lines are joined before decoding
     let nb = write_notebook(
         tmp.path(),
         serde_json::json!([{
@@ -265,13 +266,9 @@ fn string_array_binary_data_errors() {
             "execution_count": 1
         }]),
     );
-    bin()
-        .arg(&nb)
-        .arg("-o")
-        .arg(tmp.path().join("out"))
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("Expected binary data"));
+    let out = tmp.path().join("out");
+    bin().arg(&nb).arg("-o").arg(&out).assert().success();
+    assert_eq!(fs::read(out.join("img-1.png")).unwrap(), b"ABC");
 }
 
 #[test]

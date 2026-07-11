@@ -83,7 +83,7 @@ fn main() -> anyhow::Result<()> {
     for item in to_write {
         let file_name = output_path
             .join(item.name)
-            .with_extension(item.image_type.get_extension());
+            .with_added_extension(item.image_type.get_extension());
         if !cli.quiet {
             make_write_message(&cli, &file_name);
         }
@@ -146,21 +146,30 @@ fn assign_image_name(
             image_name.to_owned()
         }
     };
-    let name_count = used_names
-        .entry(name_stem.clone())
-        .and_modify(|e| *e += 1)
-        .or_insert(1);
-    if *name_count <= 1 {
-        name_stem
+    let mut name_count = used_names.get(&name_stem).copied().unwrap_or(0) + 1;
+    let final_name = if name_count <= 1 {
+        name_stem.clone()
     } else {
-        let n_dups_digits = name_count.checked_ilog10().unwrap_or(0) + 1;
-        format!(
-            "{}-{:0width$}",
-            name_stem,
-            *name_count,
-            width = n_dups_digits as usize
-        )
+        // skip suffixes that collide with names already handed out
+        loop {
+            let n_dups_digits = name_count.checked_ilog10().unwrap_or(0) + 1;
+            let candidate = format!(
+                "{}-{:0width$}",
+                name_stem,
+                name_count,
+                width = n_dups_digits as usize
+            );
+            if !used_names.contains_key(&candidate) {
+                break candidate;
+            }
+            name_count += 1;
+        }
+    };
+    used_names.insert(name_stem.clone(), name_count);
+    if final_name != name_stem {
+        used_names.insert(final_name.clone(), 1);
     }
+    final_name
 }
 
 fn make_write_message(cli: &cli::Cli, file_name: &Path) {
@@ -173,8 +182,7 @@ fn make_write_message(cli: &cli::Cli, file_name: &Path) {
 static LABEL: &str = "label:";
 
 /// Get a list of labels provided as comments
-#[must_use]
-pub fn get_comment_label(source: &str) -> Vec<&str> {
+fn get_comment_label(source: &str) -> Vec<&str> {
     let mut comments = Vec::new();
     for line in source.lines() {
         let trim_line = line.trim();
@@ -182,7 +190,10 @@ pub fn get_comment_label(source: &str) -> Vec<&str> {
             continue;
         }
         if let Some((_, identifier)) = trim_line.split_once(LABEL) {
-            comments.push(identifier.trim());
+            let identifier = identifier.trim();
+            if !identifier.is_empty() {
+                comments.push(identifier);
+            }
         }
     }
 
@@ -205,6 +216,7 @@ fn get_image_candidate_tags(tags: Option<&[String]>, tag_prefix: &str) -> Option
             .iter()
             .filter_map(|t| t.strip_prefix(tag_prefix))
             .map(|s| s.trim_start_matches(TO_TRIM))
+            .filter(|s| !s.is_empty())
             .collect();
         if candidates.len() > 1 {
             eprintln!("Warning: Multiple tag candidates: {candidates:?}");
@@ -407,7 +419,7 @@ mod tests {
 
     #[test]
     fn comment_label_empty_label() {
-        assert_eq!(get_comment_label("# label:"), vec![""]);
+        assert!(get_comment_label("# label:").is_empty());
     }
 
     #[test]
@@ -466,10 +478,7 @@ mod tests {
     #[test]
     fn tag_candidate_tag_equal_to_prefix_gives_empty_name() {
         // degenerate edge: documents current behavior
-        assert_eq!(
-            get_image_candidate_tags(Some(&tags(&["img"])), "img"),
-            Some(String::new())
-        );
+        assert_eq!(get_image_candidate_tags(Some(&tags(&["img"])), "img"), None);
     }
 
     #[test]
@@ -734,7 +743,7 @@ mod tests {
         assert_eq!(assign_image_name("x", 0, 1, &mut used), "x");
         assert_eq!(assign_image_name("x", 0, 2, &mut used), "x-1");
         assert_eq!(assign_image_name("x", 1, 2, &mut used), "x-2");
-        assert_eq!(assign_image_name("x", 0, 1, &mut used), "x-2");
+        assert_eq!(assign_image_name("x", 0, 1, &mut used), "x-3");
     }
 
     #[test]

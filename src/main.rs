@@ -81,16 +81,7 @@ fn main() -> anyhow::Result<()> {
         checked_create_dir(&output_path, cli.non_empty_action.get_action(), cli.dry_run)?;
     }
     for item in to_write {
-        let file_name = output_path
-            .join(item.name)
-            .with_added_extension(item.image_type.get_extension());
-        if file_name.parent() != Some(output_path.as_path()) {
-            bail!(
-                "Output file {} is not a direct child of output path {}",
-                file_name.display(),
-                output_path.display()
-            );
-        }
+        let file_name = output_file(&output_path, &item.name, item.image_type.get_extension())?;
         if !cli.quiet {
             make_write_message(&cli, &file_name);
         }
@@ -118,6 +109,20 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+/// Build the output path for an image, refusing (defense in depth — labels
+/// are already validated) any name that is not a direct child of the
+/// output directory.
+fn output_file(output_path: &Path, name: &str, extension: &str) -> anyhow::Result<PathBuf> {
+    let file_name = output_path.join(name).with_added_extension(extension);
+    if file_name.parent() != Some(output_path) {
+        bail!(
+            "Output file {} is not a direct child of output path {}",
+            file_name.display(),
+            output_path.display()
+        );
+    }
+    Ok(file_name)
 }
 fn has_xml_decl(svg_data: &str) -> bool {
     svg_data
@@ -194,16 +199,16 @@ fn make_write_message(cli: &cli::Cli, file_name: &Path) {
     }
 }
 static LABEL: &str = "label:";
-
+fn line_label(line: &str) -> Option<&str> {
+    let rest = line.trim_start().strip_prefix('#')?;
+    let rest = rest.strip_prefix('|').unwrap_or(rest);
+    Some(rest.trim_start().strip_prefix(LABEL)?.trim())
+}
 /// Get a list of labels provided as comments
 fn get_comment_label(source: &str) -> Vec<&str> {
     let mut comments = Vec::new();
     for line in source.lines() {
-        let trim_line = line.trim();
-        if !trim_line.starts_with('#') {
-            continue;
-        }
-        if let Some((_, identifier)) = trim_line.split_once(LABEL) {
+        if let Some(identifier) = line_label(line) {
             let identifier = identifier.trim();
             if !identifier.is_empty() {
                 comments.push(identifier);
@@ -234,7 +239,12 @@ fn get_image_candidate(cell: &CodeCell, tag_prefix: &str) -> Option<String> {
 }
 fn get_image_candidate_comment(cell: &CodeCell) -> Option<String> {
     cell.source.to_string_array().and_then(|sa| {
-        let label = sa.iter().flat_map(|&s| get_comment_label(s)).next();
+        let label = sa
+            .iter()
+            .flat_map(|s| s.lines())
+            .take_while(|line| line.trim().starts_with('#'))
+            .flat_map(get_comment_label)
+            .next();
         label.map(std::string::ToString::to_string)
     })
 }
@@ -461,6 +471,10 @@ mod tests {
     fn comment_label_no_spaces() {
         assert_eq!(get_comment_label("#label:foo"), vec!["foo"]);
     }
+    #[test]
+    fn comment_label_bar() {
+        assert_eq!(get_comment_label("#| label: foo"), vec!["foo"]);
+    }
 
     #[test]
     fn comment_label_none_present() {
@@ -468,9 +482,38 @@ mod tests {
     }
 
     #[test]
-    fn comment_label_matches_anywhere_in_comment() {
-        // `label:` does not need to start the comment
-        assert_eq!(get_comment_label("# my label: x"), vec!["x"]);
+    fn comment_label_matches_only_start_of_comment() {
+        // `label:` must start the comment
+        assert!(get_comment_label("# my label: x").is_empty());
+    }
+
+    #[test]
+    fn comment_label_word_containing_label_is_not_a_label() {
+        // the motivating bug 13 case: `label:` anchored, not substring-matched
+        assert!(get_comment_label("# xlabel: time (s)").is_empty());
+        assert!(get_comment_label("# mylabel: x").is_empty());
+    }
+
+    #[test]
+    fn comment_label_bar_variations() {
+        // the Quarto bar needs no surrounding whitespace ...
+        assert_eq!(get_comment_label("#|label:foo"), vec!["foo"]);
+        assert_eq!(get_comment_label("  #| label: y"), vec!["y"]);
+        // ... but must immediately follow the `#`, and only once
+        assert!(get_comment_label("# | label: x").is_empty());
+        assert!(get_comment_label("#|| label: x").is_empty());
+    }
+
+    #[test]
+    fn comment_label_extra_hash_is_not_a_label() {
+        // only a single `#` (plus optional `|`) may precede `label:`
+        assert!(get_comment_label("## label: x").is_empty());
+    }
+
+    #[test]
+    fn comment_label_is_case_sensitive() {
+        assert!(get_comment_label("# Label: x").is_empty());
+        assert!(get_comment_label("# LABEL: x").is_empty());
     }
 
     fn tags(v: &[&str]) -> Vec<String> {
@@ -535,6 +578,32 @@ mod tests {
             get_image_candidate(&cell, "img"),
             Some("fromcomment".to_owned())
         );
+    }
+
+    #[test]
+    fn image_candidate_blank_line_ends_leading_comment_block() {
+        // strict Quarto-like reading: the label must appear in the contiguous
+        // leading comment block, and a blank line ends the block
+        let cell = code_cell(json!({
+            "metadata": {},
+            "outputs": [],
+            "source": "# setup comment\n\n# label: x\nplot()"
+        }));
+        assert_eq!(get_image_candidate_comment(&cell), None);
+        // same when the source is stored as an nbformat line array
+        let cell = code_cell(json!({
+            "metadata": {},
+            "outputs": [],
+            "source": ["# setup comment\n", "\n", "# label: x\n", "plot()"]
+        }));
+        assert_eq!(get_image_candidate_comment(&cell), None);
+        // a leading blank line means there is no leading comment block at all
+        let cell = code_cell(json!({
+            "metadata": {},
+            "outputs": [],
+            "source": "\n# label: x\nplot()"
+        }));
+        assert_eq!(get_image_candidate_comment(&cell), None);
     }
 
     #[test]
@@ -837,5 +906,18 @@ mod tests {
         std::fs::write(&dummy, "x").unwrap();
         checked_create_dir(tmp.path(), NonEmptyDirAction::ClearDir, true).unwrap();
         assert!(dummy.exists());
+    }
+    #[test]
+    fn output_file_joins_name_and_extension() {
+        assert_eq!(
+            output_file(Path::new("out"), "pic", "png").unwrap(),
+            PathBuf::from("out/pic.png")
+        );
+    }
+
+    #[test]
+    fn output_file_rejects_names_that_escape() {
+        assert!(output_file(Path::new("out"), "../evil", "png").is_err());
+        assert!(output_file(Path::new("out"), "a/b", "png").is_err());
     }
 }

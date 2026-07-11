@@ -434,7 +434,6 @@ fn png_cell_src(source: &str) -> serde_json::Value {
 /// The Quarto form itself (`#| label: good`) already works and must keep
 /// working after the fix.
 #[test]
-#[ignore = "known bug 13: unanchored label match lets '# xlabel:' set the name"]
 fn label_must_start_the_comment() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
@@ -466,7 +465,6 @@ fn label_must_start_the_comment() {
 /// should be scanned: a label comment after the first code line must not
 /// name the image.
 #[test]
-#[ignore = "known bug 14: label comments after code lines are honored"]
 fn label_only_in_leading_comment_block() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(

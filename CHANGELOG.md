@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning].
 
 - /
 
+## [0.3.0] - 2026-07-11
+
+- BREAKING: a label comment must now start with `label:` (after `#` and an optional Quarto-style `|`); unrelated comments such as `# xlabel: time` no longer set the image name
+- BREAKING: labels are only read from the cell's leading comment block, following the Quarto convention; a `# label:` comment after the first code line is ignored
+- Ignore (with a warning) labels that would escape the output directory, such as those containing `..` or path separators; files are now always written inside the output directory
+- Fix duplicate-name handling so distinct images never silently overwrite each other, including collisions between de-duplication suffixes, multi-image numbering and explicit labels
+- Fix labels containing dots being truncated: `# label: fig-v1.2` now yields `fig-v1.2.png` instead of `fig-v1.png`
+- Support base64 image data stored as an array of lines, and tolerate surrounding whitespace in base64 data, as written by Jupyter
+- Fix SVG output: the XML declaration is no longer duplicated when the SVG already has one, and SVG stored as a single string is written as text instead of failing base64 decoding
+- Fix extraction of HTML-embedded images: `<img>` tags spanning multiple lines, uppercase or mixed-case tags and attributes, and data URLs with mime parameters (e.g. `data:image/png;charset=utf-8;base64,...`) all work now
+
 ## [0.2.1] - 2025-08-01
 
 - Allow exporting images embedded as HTML such as with hvplot

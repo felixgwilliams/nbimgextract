@@ -20,6 +20,7 @@ use base64::prelude::*;
 use clap::Parser;
 use colored::Colorize;
 use std::{
+    borrow::Cow,
     collections::HashMap,
     fs::{create_dir_all, remove_dir_all, File},
     io::{BufReader, BufWriter, Write},
@@ -286,26 +287,32 @@ fn get_image_data(data: &MimeBundle) -> Vec<(ImageType, SourceValueWrap<'_>)> {
         if mime == "text/html" {
             // per nbformat, non-JSON mimes must be strings or string arrays: see "mimebundle" in
             // <https://github.com/jupyter/nbformat/blob/16b53251aabf472ad9406ddb1f78b0421c014eeb/nbformat/v4/nbformat.v4.schema.json>
-            let Some(sa) = val.to_string_array() else {
-                eprintln!("Warning: skipping {mime} output with unexpected JSON data");
-                continue;
+            let joined_string: Cow<str> = match val {
+                SourceValue::String(s) => Cow::Borrowed(s.as_str()),
+                SourceValue::StringArray(sa) => match sa.as_slice() {
+                    [] => continue,
+                    [one] => Cow::Borrowed(one),
+                    _ => Cow::Owned(sa.concat()),
+                },
+                SourceValue::JsonData(_) => {
+                    eprintln!("Warning: skipping {mime} output with unexpected JSON data");
+                    continue;
+                }
             };
-            for line in sa {
-                let frag2 = tl::parse(line, tl::ParserOptions::default())
-                    .expect("tl only fails to parse HTML larger than u32::MAX");
-                let parser = frag2.parser();
-                let img = frag2
-                    .query_selector("img[src]")
-                    .expect("query_selector only fails for invalid selectors; this one is static");
-                let img_iter = img
-                    .filter_map(|x| x.get(parser).and_then(|x| x.as_tag()))
-                    .filter_map(|x| x.attributes().get("src"))
-                    .flatten()
-                    .filter_map(|x| x.try_as_utf8_str())
-                    .filter_map(parse_data_url)
-                    .map(|(img_type, s)| (img_type, SourceValueWrap::Owned(s.to_string())));
-                out.extend(img_iter);
-            }
+            let frag2 = tl::parse(&joined_string, tl::ParserOptions::default())
+                .expect("tl only fails to parse HTML larger than u32::MAX");
+            let parser = frag2.parser();
+            let img = frag2
+                .query_selector("img[src]")
+                .expect("query_selector only fails for invalid selectors; this one is static");
+            let img_iter = img
+                .filter_map(|x| x.get(parser).and_then(|x| x.as_tag()))
+                .filter_map(|x| x.attributes().get("src"))
+                .flatten()
+                .filter_map(|x| x.try_as_utf8_str())
+                .filter_map(parse_data_url)
+                .map(|(img_type, s)| (img_type, SourceValueWrap::Owned(s.to_string())));
+            out.extend(img_iter);
             // let cell_doc = Html::parse_document(val)
         } else if let Some(image_type) = get_image_type(mime) {
             // don't push the json data here so we don't have to process it later

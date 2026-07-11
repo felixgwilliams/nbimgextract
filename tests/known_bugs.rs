@@ -58,7 +58,6 @@ fn png_cell(label: &str, b64: &str) -> serde_json::Value {
 /// string array is never found. The HTML document should be joined and parsed
 /// as a whole.
 #[test]
-#[ignore = "known bug 1: HTML parsed line-by-line misses multi-line img tags"]
 fn multiline_html_img_tag_is_extracted() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(

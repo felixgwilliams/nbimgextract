@@ -91,9 +91,17 @@ fn main() -> anyhow::Result<()> {
             continue;
         }
         match item.image_json_data.to_ref() {
-            SourceValueRef::String(b64_data) => {
-                let image_bytes = BASE64_STANDARD.decode(b64_data)?;
-                BufWriter::new(File::create(file_name)?).write_all(&image_bytes)?;
+            SourceValueRef::String(image_data) => {
+                if item.image_type == ImageType::Svg {
+                    let mut buf = BufWriter::new(File::create(file_name)?);
+                    if !has_xml_decl(image_data) {
+                        buf.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")?;
+                    }
+                    buf.write_all(image_data.as_bytes())?;
+                } else {
+                    let image_bytes = BASE64_STANDARD.decode(image_data)?;
+                    BufWriter::new(File::create(file_name)?).write_all(&image_bytes)?;
+                }
             }
             SourceValueRef::StringArray(arr) => {
                 if item.image_type != ImageType::Svg {
@@ -104,13 +112,22 @@ fn main() -> anyhow::Result<()> {
                     .map(std::string::String::as_str)
                     .collect::<String>();
                 let mut buf = BufWriter::new(File::create(file_name)?);
-                buf.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")?;
+                if !has_xml_decl(&svg_data) {
+                    buf.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")?;
+                }
                 buf.write_all(svg_data.as_bytes())?;
             }
         }
     }
 
     Ok(())
+}
+fn has_xml_decl(svg_data: &str) -> bool {
+    svg_data
+        .trim_start_matches('\u{feff}') // tolerate a UTF-8 BOM
+        .trim_start()
+        .strip_prefix("<?xml")
+        .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_whitespace()))
 }
 /// Default output directory: `<file_stem>_images` next to the input file.
 fn default_output_path(file: &Path) -> anyhow::Result<PathBuf> {

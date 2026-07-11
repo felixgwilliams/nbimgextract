@@ -143,7 +143,6 @@ fn duplicate_names_never_overwrite() {
 /// SVG that already starts with `<?xml ...?>` (as produced by e.g. matplotlib)
 /// is written with two declarations, which is invalid XML.
 #[test]
-#[ignore = "known bug 4: XML declaration prepended unconditionally"]
 fn svg_with_existing_xml_declaration_not_duplicated() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
@@ -242,7 +241,6 @@ fn base64_with_trailing_newline_is_decoded() {
 /// string form is used, the SVG falls into the generic branch and is fed to
 /// the base64 decoder, aborting the run with "Invalid symbol 60" (`<`).
 #[test]
-#[ignore = "known bug 8: SVG stored as a single string is base64-decoded"]
 fn svg_as_single_string_is_written_as_text() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(

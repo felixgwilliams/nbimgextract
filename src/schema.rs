@@ -38,7 +38,7 @@ pub enum Cell {
 }
 
 impl Cell {
-    pub fn get_code_cell(&self) -> Option<&CodeCell> {
+    pub const fn get_code_cell(&self) -> Option<&CodeCell> {
         match self {
             Self::Code(cell) => Some(cell),
             _ => None,
@@ -92,7 +92,7 @@ pub enum Output {
 }
 
 impl Output {
-    fn get_display_data(&self) -> Option<&MimeBundle> {
+    const fn get_display_data(&self) -> Option<&MimeBundle> {
         match self {
             Self::DisplayData(out) => Some(&out.data),
             Self::ExecuteResult(out) => Some(&out.data),
@@ -126,7 +126,7 @@ impl SourceValue {
     pub fn to_string_array(&self) -> Option<Vec<&str>> {
         match self {
             Self::JsonData(_) => None,
-            Self::StringArray(sa) => Some(sa.iter().map(|s| s.as_str()).collect()),
+            Self::StringArray(sa) => Some(sa.iter().map(std::string::String::as_str).collect()),
             Self::String(s) => Some(s.split_inclusive('\n').collect()),
         }
     }
@@ -145,6 +145,8 @@ pub struct ExecuteResultOut {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
     use super::*;
     use serde_json::json;
 

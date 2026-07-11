@@ -6,7 +6,9 @@ readme = "README.md"
 homepage = "https://github.com/felixgwilliams/nbimgextract"
 repository = "https://github.com/felixgwilliams/nbimgextract"
 license = "MIT"
-
+description = "A command-line tool for extracting images from Jupyter Notebooks."
+keywords = ["jupyter", "notebook", "python"]
+categories = ["command-line-utilities", "development-tools"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]

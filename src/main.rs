@@ -1,3 +1,14 @@
+#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
+#![allow(clippy::module_name_repetitions)]
+#![warn(clippy::unwrap_used)]
+#![warn(missing_docs)]
+#![allow(clippy::multiple_crate_versions)] // can't do anything about these
+
+/*! nbimgextract is a command-line tool for extracting images from Jupyter Notebooks.
+ *
+ *
+ */
+
 mod cli;
 mod schema;
 use crate::{
@@ -87,7 +98,10 @@ fn main() -> anyhow::Result<()> {
                 if item.image_type != ImageType::Svg {
                     bail!("Expected binary data.".red())
                 }
-                let svg_data = String::from_iter(arr.iter().map(|e| e.as_str()));
+                let svg_data = arr
+                    .iter()
+                    .map(std::string::String::as_str)
+                    .collect::<String>();
                 let mut buf = BufWriter::new(File::create(file_name)?);
                 buf.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")?;
                 buf.write_all(svg_data.as_bytes())?;
@@ -106,7 +120,7 @@ fn default_output_path(file: &Path) -> anyhow::Result<PathBuf> {
         .ok_or_else(|| anyhow!("Bad file name"))?; // can't see how to manipulate OsStr themselves
 
     // a path with a file stem always has a parent (possibly "")
-    let parent = file.parent().unwrap_or(Path::new(""));
+    let parent = file.parent().unwrap_or_else(|| Path::new(""));
     Ok(parent.join(file_stem.to_owned() + "_images"))
 }
 
@@ -157,6 +171,8 @@ fn make_write_message(cli: &cli::Cli, file_name: &Path) {
 }
 static LABEL: &str = "label:";
 
+/// Get a list of labels provided as comments
+#[must_use]
 pub fn get_comment_label(source: &str) -> Vec<&str> {
     let mut comments = Vec::new();
     for line in source.lines() {
@@ -165,7 +181,7 @@ pub fn get_comment_label(source: &str) -> Vec<&str> {
             continue;
         }
         if let Some((_, identifier)) = trim_line.split_once(LABEL) {
-            comments.push(identifier.trim())
+            comments.push(identifier.trim());
         }
     }
 
@@ -174,30 +190,26 @@ pub fn get_comment_label(source: &str) -> Vec<&str> {
 
 fn get_image_candidate(cell: &CodeCell, tag_prefix: &str) -> Option<String> {
     get_image_candidate_comment(cell)
-        .or_else(|| get_image_candidate_tags(&cell.metadata.tags, tag_prefix))
+        .or_else(|| get_image_candidate_tags(cell.metadata.tags.as_deref(), tag_prefix))
 }
 fn get_image_candidate_comment(cell: &CodeCell) -> Option<String> {
-    if let Some(sa) = cell.source.to_string_array() {
+    cell.source.to_string_array().and_then(|sa| {
         let label = sa.iter().flat_map(|&s| get_comment_label(s)).next();
-        label.map(|s| s.to_string())
-    } else {
-        None
-    }
+        label.map(std::string::ToString::to_string)
+    })
 }
-fn get_image_candidate_tags(tags: &Option<Vec<String>>, tag_prefix: &str) -> Option<String> {
-    if let Some(tags) = tags {
+fn get_image_candidate_tags(tags: Option<&[String]>, tag_prefix: &str) -> Option<String> {
+    tags.as_ref().and_then(|tags| {
         let candidates: Vec<_> = tags
             .iter()
             .filter_map(|t| t.strip_prefix(tag_prefix))
             .map(|s| s.trim_start_matches(TO_TRIM))
             .collect();
         if candidates.len() > 1 {
-            eprintln!("Warning: Multiple tag candidates: {candidates:?}")
+            eprintln!("Warning: Multiple tag candidates: {candidates:?}");
         }
         candidates.first().map(|s| (*s).to_owned())
-    } else {
-        None
-    }
+    })
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ImageType {
@@ -208,8 +220,8 @@ enum ImageType {
     Svg,
 }
 impl ImageType {
-    fn get_extension(self) -> &'static str {
-        use ImageType::*;
+    const fn get_extension(self) -> &'static str {
+        use ImageType::{Gif, Jpg, Png, Svg, Webp};
         match self {
             Gif => "gif",
             Jpg => "jpg",
@@ -220,7 +232,7 @@ impl ImageType {
     }
 }
 fn get_image_type(mime: &str) -> Option<ImageType> {
-    use ImageType::*;
+    use ImageType::{Gif, Jpg, Png, Svg, Webp};
     match mime {
         "image/png" => Some(Png),
         "image/jpeg" => Some(Jpg),
@@ -268,7 +280,7 @@ impl<'a> SourceValueWrap<'a> {
         }
     }
 }
-fn get_image_data<'a>(data: &'a MimeBundle) -> Vec<(ImageType, SourceValueWrap<'a>)> {
+fn get_image_data(data: &MimeBundle) -> Vec<(ImageType, SourceValueWrap<'_>)> {
     let mut out = Vec::new();
     for (mime, val) in data {
         if mime == "text/html" {
@@ -286,11 +298,11 @@ fn get_image_data<'a>(data: &'a MimeBundle) -> Vec<(ImageType, SourceValueWrap<'
                     .query_selector("img[src]")
                     .expect("query_selector only fails for invalid selectors; this one is static");
                 let img_iter = img
-                    .flat_map(|x| x.get(parser).and_then(|x| x.as_tag()))
-                    .flat_map(|x| x.attributes().get("src"))
+                    .filter_map(|x| x.get(parser).and_then(|x| x.as_tag()))
+                    .filter_map(|x| x.attributes().get("src"))
                     .flatten()
-                    .flat_map(|x| x.try_as_utf8_str())
-                    .flat_map(parse_data_url)
+                    .filter_map(|x| x.try_as_utf8_str())
+                    .filter_map(parse_data_url)
                     .map(|(img_type, s)| (img_type, SourceValueWrap::Owned(s.to_string())));
                 out.extend(img_iter);
             }
@@ -307,9 +319,9 @@ fn get_image_data<'a>(data: &'a MimeBundle) -> Vec<(ImageType, SourceValueWrap<'
                     SourceValueWrap::Borrowed(SourceValueRef::StringArray(sa)),
                 )),
                 SourceValue::JsonData(_) => {
-                    eprintln!("Warning: skipping {mime} output with unexpected JSON data")
+                    eprintln!("Warning: skipping {mime} output with unexpected JSON data");
                 }
-            };
+            }
         }
     }
     out
@@ -319,7 +331,7 @@ fn checked_create_dir(
     exist_action: NonEmptyDirAction,
     dry_run: bool,
 ) -> anyhow::Result<()> {
-    use NonEmptyDirAction::*;
+    use NonEmptyDirAction::{Error, Proceed};
     if !path.exists() || exist_action == Proceed {
         if !dry_run {
             create_dir_all(path)?;
@@ -347,6 +359,8 @@ fn checked_create_dir(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
     use super::*;
     use serde_json::{json, Value};
 
@@ -405,22 +419,22 @@ mod tests {
         assert_eq!(get_comment_label("# my label: x"), vec!["x"]);
     }
 
-    fn tags(v: &[&str]) -> Option<Vec<String>> {
-        Some(v.iter().map(|s| (*s).to_owned()).collect())
+    fn tags(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| (*s).to_owned()).collect()
     }
 
     #[test]
     fn tag_candidate_strips_prefix_and_trim_chars() {
         assert_eq!(
-            get_image_candidate_tags(&tags(&["img-my-png"]), "img"),
+            get_image_candidate_tags(Some(&tags(&["img-my-png"])), "img"),
             Some("my-png".to_owned())
         );
         assert_eq!(
-            get_image_candidate_tags(&tags(&["img_ -name"]), "img"),
+            get_image_candidate_tags(Some(&tags(&["img_ -name"])), "img"),
             Some("name".to_owned())
         );
         assert_eq!(
-            get_image_candidate_tags(&tags(&["img name"]), "img"),
+            get_image_candidate_tags(Some(&tags(&["img name"])), "img"),
             Some("name".to_owned())
         );
     }
@@ -428,7 +442,7 @@ mod tests {
     #[test]
     fn tag_candidate_first_of_multiple_wins() {
         assert_eq!(
-            get_image_candidate_tags(&tags(&["img-a", "img-b"]), "img"),
+            get_image_candidate_tags(Some(&tags(&["img-a", "img-b"])), "img"),
             Some("a".to_owned())
         );
     }
@@ -436,17 +450,17 @@ mod tests {
     #[test]
     fn tag_candidate_no_match() {
         assert_eq!(
-            get_image_candidate_tags(&tags(&["hello", "world"]), "img"),
+            get_image_candidate_tags(Some(&tags(&["hello", "world"])), "img"),
             None
         );
-        assert_eq!(get_image_candidate_tags(&None, "img"), None);
+        assert_eq!(get_image_candidate_tags(None, "img"), None);
     }
 
     #[test]
     fn tag_candidate_tag_equal_to_prefix_gives_empty_name() {
         // degenerate edge: documents current behavior
         assert_eq!(
-            get_image_candidate_tags(&tags(&["img"]), "img"),
+            get_image_candidate_tags(Some(&tags(&["img"])), "img"),
             Some(String::new())
         );
     }
@@ -454,7 +468,7 @@ mod tests {
     #[test]
     fn tag_candidate_empty_prefix_matches_everything() {
         assert_eq!(
-            get_image_candidate_tags(&tags(&["-first", "second"]), ""),
+            get_image_candidate_tags(Some(&tags(&["-first", "second"])), ""),
             Some("first".to_owned())
         );
     }

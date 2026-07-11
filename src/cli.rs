@@ -11,6 +11,7 @@ const STYLES: Styles = Styles::styled()
     .literal(AnsiColor::Green.on_default())
     .placeholder(AnsiColor::Green.on_default());
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None, styles=STYLES)]
 pub struct Cli {
@@ -58,23 +59,18 @@ pub struct NonEmptyDirActionFlags {
 impl NonEmptyDirActionFlags {
     pub fn get_action(&self) -> NonEmptyDirAction {
         match self {
-            NonEmptyDirActionFlags {
+            Self {
                 error: false,
                 clear_dir: true,
                 proceed: false,
             } => NonEmptyDirAction::ClearDir,
-            NonEmptyDirActionFlags {
+            Self {
                 error: false,
                 clear_dir: false,
                 proceed: true,
             } => NonEmptyDirAction::Proceed,
-            NonEmptyDirActionFlags {
-                error: true,
-                clear_dir: false,
-                proceed: false,
-            }
-            | NonEmptyDirActionFlags {
-                error: false,
+            Self {
+                error: true | false,
                 clear_dir: false,
                 proceed: false,
             } => NonEmptyDirAction::Error,
@@ -91,6 +87,8 @@ pub enum NonEmptyDirAction {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used)]
+
     use super::*;
 
     fn flags(error: bool, clear_dir: bool, proceed: bool) -> NonEmptyDirActionFlags {

@@ -4,6 +4,7 @@
 //! guards against; the doc comments describe the original buggy behavior
 //! and the shape of the fix. Should a new bug be documented here before its
 //! fix lands, mark its test `#[ignore = "known bug N: ..."]` until then.
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used, clippy::panic))]
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,7 +16,7 @@ fn bin() -> Command {
 }
 
 /// Write a minimal notebook with the given cells to `dir` and return its path.
-fn write_notebook(dir: &Path, cells: serde_json::Value) -> PathBuf {
+fn write_notebook(dir: &Path, cells: &serde_json::Value) -> PathBuf {
     let nb = serde_json::json!({
         "cells": cells,
         "metadata": {},
@@ -50,7 +51,7 @@ fn multiline_html_img_tag_is_extracted() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([{
+        &serde_json::json!([{
             "cell_type": "code",
             "metadata": {},
             "source": "# label: pic\nplot()",
@@ -82,7 +83,7 @@ fn dotted_label_keeps_full_name() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([png_cell("fig-v1.2", "AAAA")]),
+        &serde_json::json!([png_cell("fig-v1.2", "AAAA")]),
     );
     let out = tmp.path().join("out");
     bin().arg(&nb).arg("-o").arg(&out).assert().success();
@@ -113,7 +114,7 @@ fn duplicate_names_never_overwrite() {
     });
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([
+        &serde_json::json!([
             png_cell("x", "MTExMQ=="),
             two_image_cell,
             png_cell("x", "NDQ0NA==")
@@ -136,7 +137,7 @@ fn svg_with_existing_xml_declaration_not_duplicated() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([{
+        &serde_json::json!([{
             "cell_type": "code",
             "metadata": {},
             "source": "# label: tri\nplot()",
@@ -171,7 +172,7 @@ fn png_stored_as_line_array_is_decoded() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([{
+        &serde_json::json!([{
             "cell_type": "code",
             "metadata": {},
             "source": "# label: pic\nplot()",
@@ -199,7 +200,7 @@ fn label_cannot_escape_output_dir() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([png_cell("../escaped", "AAAA")]),
+        &serde_json::json!([png_cell("../escaped", "AAAA")]),
     );
     let out = tmp.path().join("out");
     // whether the tool errors or sanitizes the name, nothing may be written
@@ -219,7 +220,7 @@ fn label_cannot_escape_output_dir() {
 #[test]
 fn base64_with_trailing_newline_is_decoded() {
     let tmp = tempfile::tempdir().unwrap();
-    let nb = write_notebook(tmp.path(), serde_json::json!([png_cell("pic", "QUJD\n")]));
+    let nb = write_notebook(tmp.path(), &serde_json::json!([png_cell("pic", "QUJD\n")]));
     let out = tmp.path().join("out");
     bin().arg(&nb).arg("-o").arg(&out).assert().success();
     assert_eq!(fs::read(out.join("pic.png")).unwrap(), b"ABC");
@@ -235,7 +236,7 @@ fn svg_as_single_string_is_written_as_text() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([{
+        &serde_json::json!([{
             "cell_type": "code",
             "metadata": {},
             "source": "# label: tri\nplot()",
@@ -263,7 +264,7 @@ fn empty_label_cannot_write_beside_output_dir() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([{
+        &serde_json::json!([{
             "cell_type": "code",
             "metadata": {},
             "source": "# label:\nplot()",
@@ -294,7 +295,7 @@ fn empty_label_from_tag_cannot_write_beside_output_dir() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([{
+        &serde_json::json!([{
             "cell_type": "code",
             "metadata": {"tags": ["img"]},
             "source": "plot()",
@@ -327,7 +328,7 @@ fn explicit_label_never_collides_with_dedup_name() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([
+        &serde_json::json!([
             png_cell("foo", "MTExMQ=="),
             png_cell("foo", "MjIyMg=="),
             png_cell("foo-2", "MzMzMw==")
@@ -351,7 +352,7 @@ fn uppercase_html_img_tag_is_extracted() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([{
+        &serde_json::json!([{
             "cell_type": "code",
             "metadata": {},
             "source": "# label: up\nplot()",
@@ -382,7 +383,7 @@ fn data_url_with_mime_parameters_is_extracted() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([{
+        &serde_json::json!([{
             "cell_type": "code",
             "metadata": {},
             "source": "# label: chset\nplot()",
@@ -431,7 +432,7 @@ fn label_must_start_the_comment() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([
+        &serde_json::json!([
             png_cell_src("# xlabel: time (s)\nplot()"),
             png_cell_src("# my label: x\nplot()"),
             png_cell_src("#| label: good\nplot()")
@@ -462,7 +463,7 @@ fn label_only_in_leading_comment_block() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([png_cell_src("plot()\n# label: late")]),
+        &serde_json::json!([png_cell_src("plot()\n# label: late")]),
     );
     let out = tmp.path().join("out");
     bin().arg(&nb).arg("-o").arg(&out).assert().success();

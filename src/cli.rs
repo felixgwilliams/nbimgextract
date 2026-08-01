@@ -57,6 +57,7 @@ pub struct NonEmptyDirActionFlags {
 }
 
 impl NonEmptyDirActionFlags {
+    #[allow(clippy::unreachable)]
     pub fn get_action(&self) -> NonEmptyDirAction {
         match self {
             Self {

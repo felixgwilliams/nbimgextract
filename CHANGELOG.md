@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning].
 
 - /
 
+## [0.3.1] - 2026-08-01
+
+- stricter clippy lint policy
+- dependency updates
+
 ## [0.3.0] - 2026-07-11
 
 - BREAKING: a label comment must now start with `label:` (after `#` and an optional Quarto-style `|`); unrelated comments such as `# xlabel: time` no longer set the image name

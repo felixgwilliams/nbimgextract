@@ -1,6 +1,6 @@
 [package]
 name = "nbimgextract"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 rust-version = "1.91"
 description = "A command-line tool for extracting images from Jupyter Notebooks."
@@ -26,3 +26,21 @@ tl = "0.7.8"
 assert_cmd = "2.0"
 predicates = "3.1"
 tempfile = "3"
+
+[lints.clippy]
+arithmetic_side_effects = "deny"
+as_conversions = "deny"
+exit = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+nursery = { level = "deny", priority = -1 }
+panic = "deny"
+panic_in_result_fn = "deny"
+pedantic = { level = "deny", priority = -1 }
+string_slice = "deny"
+todo = "deny"
+unchecked_time_subtraction = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+# DENY PANICS
+unwrap_used = "deny"

@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used, clippy::panic))]
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -208,7 +210,7 @@ fn conflicting_dir_action_flags_rejected() {
 }
 
 /// Write a minimal notebook with the given cells to `dir` and return its path.
-fn write_notebook(dir: &Path, cells: serde_json::Value) -> PathBuf {
+fn write_notebook(dir: &Path, cells: &serde_json::Value) -> PathBuf {
     let nb = serde_json::json!({
         "cells": cells,
         "metadata": {},
@@ -225,7 +227,7 @@ fn notebook_without_images_creates_no_output_dir() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([
+        &serde_json::json!([
             {"cell_type": "markdown", "metadata": {}, "source": "# heading"},
             {
                 "cell_type": "code",
@@ -254,7 +256,7 @@ fn string_array_binary_data_is_ok() {
     // lines; base64 lines are joined before decoding
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([{
+        &serde_json::json!([{
             "cell_type": "code",
             "metadata": {},
             "source": "plot()",
@@ -276,7 +278,7 @@ fn invalid_base64_errors() {
     let tmp = tempfile::tempdir().unwrap();
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([{
+        &serde_json::json!([{
             "cell_type": "code",
             "metadata": {},
             "source": "plot()",
@@ -302,7 +304,7 @@ fn json_valued_mime_data_skipped_with_warning() {
     // schema-invalid: non-JSON mimes must hold strings, not JSON values
     let nb = write_notebook(
         tmp.path(),
-        serde_json::json!([{
+        &serde_json::json!([{
             "cell_type": "code",
             "metadata": {},
             "source": "plot()",

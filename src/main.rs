@@ -3,6 +3,15 @@
 #![warn(clippy::unwrap_used)]
 #![warn(missing_docs)]
 #![allow(clippy::multiple_crate_versions)] // can't do anything about these
+#![cfg_attr(
+    test,
+    allow(
+        clippy::expect_used,
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )
+)]
 
 /*! nbimgextract is a command-line tool for extracting images from Jupyter Notebooks.
  *
@@ -33,6 +42,11 @@ struct ToWrite<'a> {
     image_json_data: SourceValueWrap<'a>,
     name: String,
 }
+#[allow(
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    reason = "The numbers involved will never be big enough to cause problems"
+)]
 fn main() -> anyhow::Result<()> {
     let cli = cli::Cli::parse();
     let file = File::open(&cli.file)?;
@@ -145,6 +159,11 @@ fn default_output_path(file: &Path) -> anyhow::Result<PathBuf> {
 
 /// Determine the final file stem for an image, numbering images within a
 /// multi-image cell and de-duplicating names already used by earlier cells.
+#[allow(
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    reason = "The numbers involved will never be big enough to cause problems"
+)]
 fn assign_image_name(
     image_name: &str,
     image_index: usize,
@@ -348,6 +367,7 @@ fn get_image_data(data: &MimeBundle) -> Vec<(ImageType, SourceValueWrap<'_>)> {
                     continue;
                 }
             };
+            #[allow(clippy::expect_used, reason = "It's not going to happen")]
             let frag2 = tl::parse(&joined_string, tl::ParserOptions::default())
                 .expect("tl only fails to parse HTML larger than u32::MAX");
             let img_iter = frag2

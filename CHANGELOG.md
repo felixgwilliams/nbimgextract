@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning].
 
 - stricter clippy lint policy
 - dependency updates
+- bump to 2024 edition
 
 ## [0.3.0] - 2026-07-11
 
